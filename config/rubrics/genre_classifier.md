@@ -1,33 +1,81 @@
-You are an expert Hebrew-manuscript cataloger evaluating the
-**Genre Classifier** (multi-label, 8 classes + NOTA).
+You are evaluating a **Genre Classifier** prediction (multi-label,
+8 Hebrew-manuscript classes + NOTA "none of the above").
 
-The classifier predicts MARC 655 genre/form headings from the
-manuscript's title + general notes. Gold reference (when present) is
-the ``genres`` field in MARC.
+The classifier predicts MARC 655 genre/form headings from title +
+general notes. Gold reference, when present, is the `genres` field in
+MARC. About 31% of records have NO gold — the model exists for those.
 
-For each prediction (one per fired class), decide:
+## The 8 classes + NOTA
 
-  name_ok   — does the predicted genre apply to this manuscript given
-              its title / notes / subjects? Use the ``genres`` gold
-              field when present as strong evidence; absence of gold
-              does NOT automatically mean "no" — the model is
-              specifically designed for the 31% of records without
-              gold MARC 655.
-              yes     : prediction matches gold OR is strongly supported
-                        by title / notes
-              partial : prediction adjacent (e.g. "Poetry" when the
-                        true genre is "Piyyutim")
-              no      : prediction unsupported by any field
+The classifier may fire on any of these labels:
 
-  type_ok   — same as name_ok for this evaluator (single-label
-              classification per call). Use yes/partial/no.
+`Piyyutim`, `Poetry`, `Illustrated works (Manuscript)`,
+`Personal correspondence`, `Censored manuscripts`,
+`Autograph manuscripts`, `Records (Documents)`, `Bibliographies`, and
+`other` (NOTA).
 
-  role_ok   — n/a.
+## Decision procedure
 
-  overall   — full   : both yes
-              partial: any partial
-              fail   : any "no"
+### Step 1 — Check gold
 
-  reasoning — 1–2 sentences citing title / notes / subjects.
+If `genres` (MARC 655) is non-empty:
 
-CRITICAL — return ONLY the JSON verdict.
+- **Predicted label is in `genres`**            → `name_ok = yes`, `type_ok = yes`
+- **Predicted label is semantically adjacent** → `name_ok = partial`, `type_ok = partial`
+  (e.g., predicted "Poetry" when gold says "Piyyutim"; predicted
+  "Records (Documents)" when gold says "Letters")
+- **Predicted label is unrelated to gold**     → `name_ok = no`, `type_ok = no`
+
+### Step 2 — No gold? Triangulate from title + notes + subjects
+
+Evidence patterns:
+
+| Predicted label                  | Evidence pattern in title / notes / subjects                     |
+|----------------------------------|------------------------------------------------------------------|
+| Piyyutim                         | "פיוט", "פיוטים", liturgical-poetry keywords ("סליחות", "קינות") |
+| Poetry                           | "שירה", "שירים", verse structure mentioned                       |
+| Illustrated works (Manuscript)   | "מאויר", "ציורים", "illuminated", references to miniatures        |
+| Personal correspondence          | "מכתבים", "אגרות", "letters"                                     |
+| Censored manuscripts             | "צנזורה", "מצונזר", inquisitor / censor names in notes           |
+| Autograph manuscripts            | "אוטוגרף", "כתב יד המחבר", "autograph"                            |
+| Records (Documents)              | "תעודות", "documents", legal / archival content                 |
+| Bibliographies                   | "ביבליוגרפיה", "רשימת ספרים", catalogues of works                |
+
+- **Pattern clearly present**                → `name_ok = yes`, `type_ok = yes`
+- **Weak signal, related but uncertain**     → `name_ok = partial`, `type_ok = partial`
+- **No supporting evidence in title / notes / subjects** → `name_ok = no`, `type_ok = no`
+
+### Step 3 — `role_ok = "n/a"`.
+
+### Step 4 — Compute `overall` using the universal table.
+
+## Worked examples
+
+**Example A — full (gold match):**
+- Predicted: "Piyyutim"
+- MARC: `genres = ["Piyyutim", "Autograph manuscripts"]`
+- Verdict: name_ok=yes, type_ok=yes, overall=full
+- Reasoning: `genres[0] = "Piyyutim" — exact match`
+
+**Example B — full (no gold, strong evidence):**
+- Predicted: "Illustrated works (Manuscript)"
+- MARC: `genres = []`; `notes[] = ["כתב יד מאויר עם מיניאטורות זהב"]`
+- Verdict: name_ok=yes, type_ok=yes, overall=full
+- Reasoning: `notes[0] contains "מאויר עם מיניאטורות" — illustrated-works pattern`
+
+**Example C — partial (adjacent):**
+- Predicted: "Poetry"
+- MARC: `genres = ["Piyyutim"]`
+- Verdict: name_ok=partial, type_ok=partial, overall=partial
+- Reasoning: `Piyyutim are religious poetry; predicted Poetry is the secular sibling — adjacent`
+
+**Example D — fail (unsupported):**
+- Predicted: "Personal correspondence"
+- MARC: `genres = ["Bible commentaries"]`; `notes[]` mentions Psalm commentary; no letters / correspondence
+- Verdict: name_ok=no, type_ok=no, overall=fail
+- Reasoning: `genres = "Bible commentaries"; notes describe biblical exegesis — no correspondence evidence`
+
+## Output
+
+JSON only. Cite the field used (`genres`, `notes[i]`, `subjects[i]`,
+`title`) and quote the deciding substring.
