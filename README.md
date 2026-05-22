@@ -1,15 +1,48 @@
 # eval-agent
 
-A long-running, Gemini-powered evaluation agent for the **MHM Pipeline**
-(`/Users/alexandergo/Documents/Doctorat/pipeline`). Reads pipeline JSON
-outputs from disk, asks Gemini 3.x to compare each prediction against
-the full MARC record, and emits reproducible per-model precision
-reports plus reviewer-grade audit artefacts.
+A **long-running LLM evaluation agent** that judges every output of an
+ML pipeline against the source record using Gemini 3.x as judge.
+Designed as a reference implementation of Anthropic's
+[effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
+pattern, applied to evaluation systems.
 
-Built following Anthropic's [effective harnesses for long-running
-agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
-— Initializer + Worker split, structured file state, git checkpointing,
-session-startup procedure, self-verification.
+**What it demonstrates** (single-line summary per pillar):
+
+- **Agent harness** — Initializer + Worker split; mandatory session-startup procedure (`git log` → `progress.md` tail → `feature_list.json` → `make verify` → only then execute); pluggable evaluator + judge interfaces; tool registry.
+- **AI memory hierarchy** — four explicit layers: working (per-Worker), episodic (`state/runs/*/results.jsonl`), semantic (`state/cache/verdict_cache.jsonl`, SHA-256-keyed, append-only), procedural (`state/feature_list.json` + `state/progress.md`).
+- **Context engineering** — per-evaluator MARC field projection; explicit prompt budget; structured-output schemas physically prevent malformed JSON.
+- **Production LLM client** — sliding-window threading-safe rate limiter; structured-output enforcement via `responseSchema`; exponential-backoff retry; explicit thinking-token control; content-addressed verdict cache.
+- **Experimentation system** — pluggable `Judge` interface (Gemini today, Claude/GPT plug-in); cross-run `diff` for regression detection; schema-versioned verdicts; mandatory self-verification (5% re-judge) on every run.
+- **Real-world deployment** — evaluates 5 trained models (3 NER, 2 classifiers) on a 68-record corpus from a Hebrew-manuscript PhD pipeline; ~$0.30 per full run; zero 429s.
+
+It started life as a one-off 838-line script in the parent pipeline
+repo and was deliberately extracted into a standalone project with
+proper module boundaries, schema versioning, append-only memory, and
+session state.
+
+The application here is **evaluating an ML pipeline's outputs** — but
+the harness pattern (long-running, file-backed memory, tool registry,
+self-verification) ports cleanly to any agent system that needs to
+survive across sessions and accumulate knowledge.
+
+See **[INTERVIEW.md](INTERVIEW.md)** for a project breakdown formatted
+for engineering interviews / project demos.
+
+---
+
+## Parent context
+
+The parent project is the **MHM Pipeline** at
+`/Users/alexandergo/Documents/Doctorat/pipeline` — a digital-humanities
+MARC-to-Wikidata conversion pipeline for Hebrew manuscripts (PhD
+dissertation in progress). The pipeline ships 5 trained models (3 NER
+based on DictaBERT + 2 multi-label classifiers) plus 4 downstream
+stages (authority resolution, RDF mapping, SHACL validation, Wikidata
+upload).
+
+The eval-agent reads the pipeline's JSON outputs and judges them.
+**Loose coupling, file paths only** — no Python imports from the
+pipeline repo. Pipeline can ship; eval-agent stays independent.
 
 ---
 

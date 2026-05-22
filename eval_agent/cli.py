@@ -81,18 +81,95 @@ def _cmd_verify(_args: argparse.Namespace) -> int:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
-    print("eval-agent run — NOT YET IMPLEMENTED in Phase 0.")
-    print(f"  --pipeline-output: {args.pipeline_output}")
+    """Execute one Worker session against a pipeline output directory."""
+    from eval_agent.orchestration.session import Session, SessionConfig, _load_defaults  # noqa: PLC0415
+
+    defaults = _load_defaults()
+    try:
+        config = SessionConfig.from_args(args, defaults)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    session = Session(config)
+    session.startup()
+    try:
+        verdicts = session.execute()
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    if not verdicts and config.dry_run:
+        return 0
+    if not verdicts:
+        print("No verdicts produced (no candidates above threshold).")
+        return 0
+
+    run_dir = session.checkpoint(verdicts)
+    session.finalize()
     print()
-    print("Phase 1 will port the candidate-builder + Gemini judge from")
-    print("`/Users/alexandergo/Documents/Doctorat/pipeline/scripts/")
-    print("evaluate_models_with_gemini.py` into this agent.")
-    return 1
+    print(f"  results.jsonl: {run_dir / 'results.jsonl'}")
+    print(f"  summary.csv:   {run_dir / 'summary.csv'}")
+    print(f"  report.md:     {run_dir / 'report.md'}")
+    return 0
 
 
-def _cmd_report(_args: argparse.Namespace) -> int:
-    print("eval-agent report — NOT YET IMPLEMENTED in Phase 0.")
-    return 1
+def _cmd_report(args: argparse.Namespace) -> int:
+    """Regenerate report.md from a run's results.jsonl (no Gemini calls)."""
+    import json  # noqa: PLC0415
+
+    from eval_agent.evaluators._base import Verdict  # noqa: PLC0415
+    from eval_agent.report.markdown_report import write_markdown  # noqa: PLC0415
+
+    runs_dir = STATE_DIR / "runs"
+    if not runs_dir.is_dir():
+        print("No runs dir present.", file=sys.stderr)
+        return 2
+    if args.run == "latest":
+        candidates = sorted(p.name for p in runs_dir.iterdir() if p.is_dir())
+        if not candidates:
+            print("No runs found.", file=sys.stderr)
+            return 2
+        run_id = candidates[-1]
+    else:
+        run_id = args.run
+    run_dir = runs_dir / run_id
+    results = run_dir / "results.jsonl"
+    if not results.is_file():
+        print(f"No results.jsonl under {run_dir}", file=sys.stderr)
+        return 2
+
+    verdicts = []
+    for line in results.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        v = Verdict(
+            record_id=rec.get("record_id", ""),
+            evaluator_id=rec.get("evaluator_id", ""),
+            sub_type=rec.get("sub_type") or "",
+            candidate_payload=rec.get("candidate", {}),
+            confidence=float(rec.get("confidence", 0.0)),
+            name_ok=rec["verdict"].get("name_ok", "no"),
+            type_ok=rec["verdict"].get("type_ok", "no"),
+            role_ok=rec["verdict"].get("role_ok", "n/a"),
+            overall=rec["verdict"].get("overall", "fail"),
+            reasoning=rec["verdict"].get("reasoning", ""),
+            error=rec.get("error"),
+            judge_id=rec.get("judge_id", ""),
+            cache_key=rec.get("cache_key", ""),
+            judged_at=rec.get("judged_at", ""),
+        )
+        verdicts.append(v)
+
+    out = run_dir / "report.md"
+    write_markdown(
+        out, verdicts,
+        title=f"eval-agent run {run_id} (regenerated)",
+        judge_id=verdicts[0].judge_id if verdicts else "",
+    )
+    print(f"Wrote {out}")
+    return 0
 
 
 def _cmd_diff(_args: argparse.Namespace) -> int:
@@ -122,9 +199,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p_run.add_argument("--threshold", type=float, default=0.85)
     p_run.add_argument("--rpm", type=int, default=25)
     p_run.add_argument("--parallel", type=int, default=2)
-    p_run.add_argument("--evaluators", default="all")
-    p_run.add_argument("--dry-run", action="store_true")
-    p_run.add_argument("--resume", action="store_true")
+    p_run.add_argument("--evaluators", default="all",
+                       help="comma-separated evaluator ids, or 'all' (default)")
+    p_run.add_argument("--judge", default=None,
+                       help="override judge model id (default: from config/default.yaml)")
+    p_run.add_argument("--api-key", default=None,
+                       help="Gemini API key (default: GEMINI_API_KEY env, then getpass)")
+    p_run.add_argument("--dry-run", action="store_true",
+                       help="extract candidates + print counts; no Gemini calls")
+    p_run.add_argument("--resume", action="store_true",
+                       help="(Phase 2) resume an interrupted run")
 
     p_report = sub.add_parser("report", help="regenerate report from a run")
     p_report.add_argument("--run", default="latest")
