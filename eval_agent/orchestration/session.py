@@ -92,17 +92,45 @@ class SessionConfig:
                         f"unknown evaluator {e!r}; known: {sorted(REGISTRY)}"
                     )
 
+        judge_model = args.judge or judge_cfg.get("id", "gemini-3.5-flash")
+
+        # Pro-safety: free-tier RPM on Pro variants is roughly 10× tighter than
+        # Flash. When the user picks a Pro model without overriding --rpm /
+        # --parallel, fall back to Pro-safe defaults to avoid quota 429s.
+        # Explicit user values always win — we only fill in unset slots.
+        rpm = args.rpm
+        parallel = args.parallel
+        is_pro = _looks_like_pro_model(judge_model)
+        if is_pro:
+            pro_cfg = rl_cfg.get("pro", {})
+            pro_rpm = int(pro_cfg.get("rpm", 10))
+            pro_parallel = int(pro_cfg.get("parallel", 1))
+            if rpm is None:
+                rpm = pro_rpm
+            if parallel is None:
+                parallel = pro_parallel
+
         return cls(
             pipeline_output=Path(args.pipeline_output).expanduser().resolve(),
             threshold=float(args.threshold or thr_cfg.get("default", 0.85)),
-            rpm=int(args.rpm or rl_cfg.get("rpm", 25)),
-            parallel=int(args.parallel or rl_cfg.get("parallel", 2)),
-            judge_model=args.judge or judge_cfg.get("id", "gemini-3.1-pro-preview"),
+            rpm=int(rpm if rpm is not None else rl_cfg.get("rpm", 25)),
+            parallel=int(parallel if parallel is not None else rl_cfg.get("parallel", 2)),
+            judge_model=judge_model,
             evaluators=evaluators,
             api_key=args.api_key or "",
             dry_run=bool(args.dry_run),
             no_cache=bool(getattr(args, "no_cache", False)),
         )
+
+
+def _looks_like_pro_model(judge_id: str) -> bool:
+    """True when the model id looks like a Gemini Pro variant.
+
+    Pro-tier free quotas are ~10 RPM (vs ~150 RPM on Flash). We detect by
+    substring match so future Pro variants (preview, GA, regional) all hit
+    the safer defaults without code changes.
+    """
+    return "pro" in judge_id.lower()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -174,9 +202,14 @@ class Session:
 
     def startup(self) -> None:
         ui.header(f"eval-agent · session {self._run_id}")
-        ui.kv("judge", self.config.judge_model)
+        is_pro = _looks_like_pro_model(self.config.judge_model)
+        judge_label = f"{self.config.judge_model}" + ("  (Pro tier)" if is_pro else "")
+        ui.kv("judge", judge_label)
         ui.kv("threshold", self.config.threshold)
-        ui.kv("rpm / parallel", f"{self.config.rpm} / {self.config.parallel}")
+        rpm_label = f"{self.config.rpm} / {self.config.parallel}"
+        if is_pro:
+            rpm_label += "  (Pro-safe defaults — override with --rpm / --parallel)"
+        ui.kv("rpm / parallel", rpm_label)
         ui.kv("evaluators", ", ".join(self.config.evaluators))
         ui.kv("pipeline output", self.config.pipeline_output)
 
