@@ -122,16 +122,43 @@ class SessionStats:
 class Session:
     """One Worker session against one pipeline-output directory."""
 
-    def __init__(self, config: SessionConfig) -> None:
+    def __init__(
+        self,
+        config: SessionConfig,
+        *,
+        judge: Judge | None = None,
+        cache_path: Path | None = None,
+        runs_dir: Path | None = None,
+        progress_path: Path | None = None,
+    ) -> None:
+        """Construct a Worker session.
+
+        All file-system + judge dependencies are injectable to keep
+        e2e tests fast + hermetic. In production callers pass nothing
+        and the constructor falls back to the canonical paths.
+
+        Parameters
+        ----------
+        judge
+            If provided, used directly (skips ``_build_judge``). Tests
+            inject a ``MockJudge`` here. Production leaves this None
+            and the judge is built lazily at the start of ``execute``.
+        cache_path, runs_dir, progress_path
+            Override the on-disk locations. Tests point them at
+            ``tmp_path`` so the real ``state/`` directory is never
+            touched.
+        """
         self.config = config
         self.stats = SessionStats()
         self._defaults = _load_defaults()
 
         self._run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        self._run_dir = RUNS_DIR / self._run_id
-        self._cache = VerdictCache(CACHE_PATH)
+        self._runs_dir = runs_dir if runs_dir is not None else RUNS_DIR
+        self._run_dir = self._runs_dir / self._run_id
+        self._cache = VerdictCache(cache_path if cache_path is not None else CACHE_PATH)
+        self._progress_path = progress_path if progress_path is not None else PROGRESS_PATH
         self._schema = _load_schema()
-        self._judge: Judge | None = None  # built lazily so dry-run can skip
+        self._judge: Judge | None = judge  # built lazily in execute() if None
 
         self._evaluators: list[Evaluator] = [
             build_evaluator(e) for e in config.evaluators
@@ -191,7 +218,8 @@ class Session:
             print("\n--dry-run: stopping before any judge calls.")
             return []
 
-        self._judge = _build_judge(self.config)
+        if self._judge is None:
+            self._judge = _build_judge(self.config)
         cache_hits = sum(
             1 for ev, c in candidates
             if self._cache.get(judge_id=self._judge.id, prompt=ev.build_prompt(c))
@@ -223,6 +251,8 @@ class Session:
     # ── Phase 3: checkpoint ───────────────────────────────────────────
 
     def checkpoint(self, verdicts: list[Verdict]) -> Path:
+        # ``self._run_dir`` includes the injected runs_dir + run_id; this is
+        # the only place the on-disk run folder is created.
         self._run_dir.mkdir(parents=True, exist_ok=True)
         # Aggregate stats
         for v in verdicts:
@@ -269,7 +299,8 @@ class Session:
 
     def finalize(self) -> None:
         # Append narrative session block to progress.md (append-only invariant)
-        with PROGRESS_PATH.open("a", encoding="utf-8") as f:
+        self._progress_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._progress_path.open("a", encoding="utf-8") as f:
             f.write(f"\n## {self._run_id}\n\n")
             f.write(f"- Judge: `{self.config.judge_model}` @ {self.config.rpm} RPM, "
                     f"{self.config.parallel} parallel\n")

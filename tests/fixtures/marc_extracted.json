@@ -1,0 +1,62 @@
+[
+  {
+    "_control_number": "990000000000001",
+    "title": "ספר תהלים",
+    "variant_titles": ["מקדש מעט"],
+    "authors": [
+      {"name": "דוד המלך", "role": "author", "certainty": "Probable"}
+    ],
+    "contributors": [
+      {"name": "רש\"י, שלמה בן יצחק", "role": "commentator"},
+      {"name": "מעתיק: יוסף בן יעקב", "role": "scribe"}
+    ],
+    "provenance": "ציון בעלים בראש כה\"י: \"משה יהודה הכמ\"ר מהללאל\".",
+    "notes": [
+      "BIBLIOGRAPHIC_TEST_1.txt",
+      "פתיחה: ספר תהלים עם פירוש רש\"י, נכתב בידי יוסף בן יעקב בשנת ת\"ה (1645)",
+      "תרגום לאיטלקית מאת חזקיה ריאיטי בדף 12א-18ב"
+    ],
+    "contents": "תהלים פרקים א-ה (דף 1א-5ב); תהלים פרקים ו-י (דף 6א-10ב)",
+    "colophon_text": "נשלם פירוש כל ספר תהלים בעזרת ה' יום ה' כ\"ח לאדר שנת ת\"ה ליצירה אני יוסף בן יעקב מעתיק",
+    "data_from_colophon": {"scribe": "יוסף בן יעקב", "year": 1645, "place": "Italy"},
+    "genres": ["Piyyutim", "Autograph manuscripts"],
+    "subjects": [
+      {"term": "תהלים", "authority_id": null, "type": "religious_work"}
+    ],
+    "dates": {"original_string": "ת\"ה", "year": 1645, "certainty": "Probable"},
+    "canonical_references": [
+      {"hierarchy": "Bible", "book": "Psalms"}
+    ],
+    "related_works": [{"title": "Bible.", "relationship": "related"}],
+    "place": "Italy",
+    "related_places": ["Rome (Italy)"],
+    "shelfmark": "TEST 0001"
+  },
+  {
+    "_control_number": "990000000000002",
+    "title": "ספר הזוהר",
+    "variant_titles": [],
+    "authors": [
+      {"name": "שמעון בן יוחאי", "role": "author"}
+    ],
+    "contributors": [],
+    "provenance": "",
+    "notes": [
+      "BIBLIOGRAPHIC_TEST_2.txt",
+      "כתב יד עם פירושי שולים בכתיבה שונה"
+    ],
+    "contents": "",
+    "colophon_text": "",
+    "data_from_colophon": {},
+    "genres": ["Illustrated works (Manuscript)"],
+    "subjects": [
+      {"term": "Kabbalah", "type": "subject"}
+    ],
+    "dates": {"original_string": "1480", "year": 1480, "certainty": "Probable"},
+    "canonical_references": [],
+    "related_works": [],
+    "place": "Spain",
+    "related_places": [],
+    "shelfmark": "TEST 0002"
+  }
+]

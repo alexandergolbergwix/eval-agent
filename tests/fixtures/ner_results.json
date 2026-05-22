@@ -1,0 +1,103 @@
+[
+  {
+    "_control_number": "990000000000001",
+    "text": "ספר תהלים עם פירוש רש\"י, נכתב בידי יוסף בן יעקב בשנת ת\"ה (1645)",
+    "entities": [
+      {
+        "person": "יוסף בן יעקב",
+        "start": 25,
+        "end": 37,
+        "role": "TRANSCRIBER",
+        "confidence": 0.85,
+        "model_confidence": 0.97,
+        "source": "person_ner"
+      },
+      {
+        "person": "חזקיה ריאיטי",
+        "start": 50,
+        "end": 62,
+        "role": "TRANSLATOR",
+        "confidence": 0.85,
+        "model_confidence": 0.92,
+        "source": "person_ner"
+      },
+      {
+        "person": "ריאיטי",
+        "start": 56,
+        "end": 62,
+        "role": "TRANSLATOR",
+        "confidence": 0.60,
+        "model_confidence": 0.78,
+        "source": "person_ner"
+      },
+      {
+        "text": "משה יהודה הכמ\"ר מהללאל",
+        "start": 100,
+        "end": 124,
+        "type": "OWNER",
+        "confidence": 0.99,
+        "source": "provenance_ner"
+      },
+      {
+        "text": "ת\"ה",
+        "start": 150,
+        "end": 153,
+        "type": "DATE",
+        "confidence": 0.95,
+        "source": "provenance_ner"
+      },
+      {
+        "text": "דף 12א",
+        "start": 180,
+        "end": 186,
+        "type": "FOLIO",
+        "confidence": 0.99,
+        "source": "contents_ner"
+      },
+      {
+        "text": "תהלים",
+        "start": 200,
+        "end": 205,
+        "type": "WORK",
+        "confidence": 0.93,
+        "source": "contents_ner"
+      },
+      {
+        "text": "חזקיה ריאיטי",
+        "start": 220,
+        "end": 232,
+        "type": "WORK_AUTHOR",
+        "confidence": 0.88,
+        "source": "contents_ner"
+      }
+    ],
+    "ml_genres": [
+      {"label": "Piyyutim", "confidence": 0.92},
+      {"label": "Autograph manuscripts", "confidence": 0.87},
+      {"label": "Poetry", "confidence": 0.74}
+    ],
+    "ml_colophon_sentences": [
+      "נשלם פירוש כל ספר תהלים בעזרת ה' יום ה' כ\"ח לאדר שנת ת\"ה ליצירה אני יוסף בן יעקב מעתיק",
+      "בכתב יד זה ספר תהלים עם פירוש רש\"י"
+    ]
+  },
+  {
+    "_control_number": "990000000000002",
+    "text": "ספר הזוהר. כתב יד עם פירושי שולים בכתיבה שונה.",
+    "entities": [
+      {
+        "person": "שמעון בן יוחאי",
+        "start": 10,
+        "end": 24,
+        "role": "AUTHOR",
+        "confidence": 0.60,
+        "model_confidence": 0.95,
+        "source": "person_ner"
+      }
+    ],
+    "ml_genres": [
+      {"label": "Illustrated works (Manuscript)", "confidence": 0.88}
+    ],
+    "ml_colophon_sentences": []
+  }
+]
