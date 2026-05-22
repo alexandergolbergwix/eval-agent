@@ -1,10 +1,17 @@
 # eval-agent default configuration. CLI flags override these values.
 
 judge:
-  # Gemini model id used by default. Other options:
-  #   - "gemini-3.5-flash" (stable, ~150 RPM free tier, lower cost)
-  #   - "gemini-2.5-pro"   (older stable Pro)
-  id: "gemini-3.1-pro-preview"
+  # Default judge: gemini-3.5-flash (stable, free-tier ~150 RPM,
+  # ~10× cheaper than Pro). Strong enough for the 5-field structured
+  # verdict this agent emits. Override per-run with `--judge <id>`:
+  #
+  #   --judge gemini-3.1-pro-preview   # higher-quality reasoning, ~10 RPM
+  #   --judge gemini-2.5-pro           # mature Pro alternative
+  #   --judge gemini-3-flash           # Flash preview variant
+  #
+  # The verdict cache key includes the judge id, so switching judges
+  # invalidates the cache cleanly — no cross-judge contamination.
+  id: "gemini-3.5-flash"
   endpoint: "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
   thinking_level: "low"          # "low" | "high" — keep CoT brief for structured tasks
   max_output_tokens: 4096
@@ -12,8 +19,12 @@ judge:
   top_p: 0.95
 
 rate_limit:
-  rpm: 25                        # global sliding-window cap (60 RPM = free-tier ceiling on 3.1 Pro Preview)
-  parallel: 2                    # worker pool size — small to keep RPM honest
+  # gemini-3.5-flash free tier sustains ~150 RPM. We default to 60 RPM,
+  # a safe sub-quota number that finishes 162 candidates in ~3 minutes
+  # while leaving headroom for bursty cache misses. For Pro models
+  # (3.1 Pro Preview, 2.5 Pro) pass `--rpm 25` or lower.
+  rpm: 60
+  parallel: 4                    # worker pool size — small to keep RPM honest
   max_retries: 6
   retry_base_seconds: 5
 

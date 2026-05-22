@@ -186,12 +186,18 @@ eval-agent
 
 ## Cost & runtime budget
 
-- Per-candidate: ~1.5 K input + ~200 output tokens with Gemini 3.1 Pro
-  Preview ≈ **$0.0019 / candidate**.
-- 68-record `test_subset.tsv` corpus → ~160 candidates → **~$0.30 / run**.
-- Default rate-limit: **25 RPM** (safe on free-tier). Runtime ~7 min.
-- Cache hits are free — incremental re-runs cost only the new
-  candidates.
+Default judge is **`gemini-3.5-flash`** (stable, high free-tier quota,
+~10× cheaper than Pro). Switch with `--judge <id>` per run.
+
+| Judge | Per-candidate cost | Per-run (~162 cand.) | Default RPM | Runtime |
+|---|---:|---:|---:|---:|
+| `gemini-3.5-flash` (default) | ~$0.0002 | **~$0.03** | 60 | ~3 min |
+| `gemini-3.1-pro-preview` | ~$0.0019 | ~$0.30 | 25 | ~7 min |
+| `gemini-2.5-pro` | ~$0.0021 | ~$0.34 | 25 | ~7 min |
+
+Cache hits are free — incremental re-runs cost only the new
+candidates. The verdict cache key includes the judge id, so
+switching judges invalidates the cache cleanly.
 
 ---
 

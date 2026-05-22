@@ -196,9 +196,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p_run.add_argument("--pipeline-output", required=True,
                        help="path to pipeline eval/work/ folder containing "
                             "marc_extracted.json and ner_results.json")
-    p_run.add_argument("--threshold", type=float, default=0.85)
-    p_run.add_argument("--rpm", type=int, default=25)
-    p_run.add_argument("--parallel", type=int, default=2)
+    # Defaults are None so the config file (config/default.yaml) wins when
+    # the user doesn't explicitly pass a flag. SessionConfig.from_args
+    # falls back to config values when the arg is None.
+    p_run.add_argument("--threshold", type=float, default=None,
+                       help="confidence floor (default: from config/default.yaml)")
+    p_run.add_argument("--rpm", type=int, default=None,
+                       help="global RPM cap (default: from config/default.yaml)")
+    p_run.add_argument("--parallel", type=int, default=None,
+                       help="worker pool size (default: from config/default.yaml)")
     p_run.add_argument("--evaluators", default="all",
                        help="comma-separated evaluator ids, or 'all' (default)")
     p_run.add_argument("--judge", default=None,
