@@ -152,7 +152,7 @@ class Session:
         self.stats = SessionStats()
         self._defaults = _load_defaults()
 
-        self._run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        self._run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         self._runs_dir = runs_dir if runs_dir is not None else RUNS_DIR
         self._run_dir = self._runs_dir / self._run_id
         self._cache = VerdictCache(cache_path if cache_path is not None else CACHE_PATH)

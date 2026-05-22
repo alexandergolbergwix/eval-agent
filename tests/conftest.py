@@ -148,4 +148,7 @@ def state_paths(tmp_path: Path) -> dict[str, Path]:
     cache = tmp_path / "state" / "cache" / "verdict_cache.jsonl"
     runs = tmp_path / "state" / "runs"
     prog = tmp_path / "state" / "progress.md"
+    # Ensure parent directories exist so tests can write peer files (e.g. feature_list.json)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    runs.mkdir(parents=True, exist_ok=True)
     return {"cache_path": cache, "runs_dir": runs, "progress_path": prog}

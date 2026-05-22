@@ -78,6 +78,106 @@ def load() -> dict[str, Any]:
     return json.loads(FEATURE_LIST_PATH.read_text(encoding="utf-8"))
 
 
+def update_status_from_run(
+    *,
+    feature_list_path: Path,
+    run_dir: Path,
+    precision_floor: float = 0.80,
+) -> None:
+    """Mutate ``feature_list_path`` in-place to reflect precision from a run.
+
+    Reads ``run_dir / "results.jsonl"``, groups verdicts by
+    ``(evaluator_id, sub_type)``, computes precision (fraction with
+    ``verdict.overall == "full"`` among non-errored verdicts), and:
+
+      - bumps ``status.attempts`` by 1
+      - updates ``status.last_run`` to ``run_dir.name``
+      - updates ``status.last_precision``
+      - flips ``status.passes`` to True iff precision >= ``precision_floor``
+
+    Features that had zero non-errored verdicts in this run keep their
+    previous status unchanged. Features in the run that are not yet in
+    the file are appended with ``threshold=0.85``. Features in the file
+    that have no verdicts in this run are preserved untouched.
+
+    The write is atomic (temp file + rename).
+    """
+    payload = json.loads(feature_list_path.read_text(encoding="utf-8"))
+    features: list[dict[str, Any]] = list(payload.get("features", []))
+
+    results_path = run_dir / "results.jsonl"
+    grouped: dict[tuple[str, str], dict[str, int]] = {}
+    if results_path.exists():
+        for line in results_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if rec.get("error"):
+                continue
+            evaluator_id = rec.get("evaluator_id")
+            sub_type = rec.get("sub_type")
+            if not evaluator_id or sub_type is None:
+                continue
+            verdict = rec.get("verdict") or {}
+            overall = verdict.get("overall")
+            key = (str(evaluator_id), str(sub_type))
+            bucket = grouped.setdefault(key, {"total": 0, "full": 0})
+            bucket["total"] += 1
+            if overall == "full":
+                bucket["full"] += 1
+
+    precisions: dict[tuple[str, str], float] = {}
+    for key, bucket in grouped.items():
+        if bucket["total"] > 0:
+            precisions[key] = bucket["full"] / bucket["total"]
+
+    existing_keys: set[tuple[str, str]] = set()
+    for feature in features:
+        evaluator = str(feature.get("evaluator", ""))
+        sub_type = str(feature.get("sub_type", ""))
+        key = (evaluator, sub_type)
+        existing_keys.add(key)
+        if key not in precisions:
+            continue
+        precision = precisions[key]
+        status = feature.setdefault("status", _empty_status())
+        status["attempts"] = int(status.get("attempts", 0)) + 1
+        status["last_run"] = run_dir.name
+        status["last_precision"] = precision
+        status["passes"] = precision >= precision_floor
+
+    for key, precision in precisions.items():
+        if key in existing_keys:
+            continue
+        evaluator, sub_type = key
+        features.append({
+            "id": f"{evaluator}.{sub_type}",
+            "evaluator": evaluator,
+            "sub_type": sub_type,
+            "threshold": 0.85,
+            "status": {
+                "passes": precision >= precision_floor,
+                "attempts": 1,
+                "last_run": run_dir.name,
+                "last_precision": precision,
+                "notes": "",
+            },
+        })
+
+    payload["features"] = features
+
+    tmp_path = feature_list_path.with_suffix(feature_list_path.suffix + ".tmp")
+    tmp_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    tmp_path.replace(feature_list_path)
+
+
 def _cli() -> int:
     if len(sys.argv) < 2 or sys.argv[1] != "bootstrap":
         print("usage: python -m eval_agent.orchestration.feature_list bootstrap", file=sys.stderr)

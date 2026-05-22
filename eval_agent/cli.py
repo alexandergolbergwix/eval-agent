@@ -56,27 +56,33 @@ def _cmd_doctor(_args: argparse.Namespace) -> int:
 
 
 def _cmd_verify(_args: argparse.Namespace) -> int:
-    """Session-startup pre-flight: schemas + cache + fixtures + tests.
+    """Session-startup pre-flight: schemas + cache integrity.
 
-    Phase 0: validates the JSON Schema file itself and confirms state
-    dirs exist. Phase 2 will add cache integrity + pytest invocation.
+    Validates the verdict JSON Schema, then walks every line in the
+    on-disk verdict cache to confirm each row parses and that the
+    inner verdict object matches the schema. Returns non-zero on any
+    failure.
     """
-    import jsonschema  # noqa: PLC0415 — optional dep, only needed here
+    from eval_agent.orchestration import session as session_mod  # noqa: PLC0415
+    from eval_agent.orchestration.verify import run_verify  # noqa: PLC0415
 
-    schema_path = SCHEMAS_DIR / "verdict.v1.json"
-    if not schema_path.is_file():
-        print(f"FAIL: schema missing at {schema_path}")
-        return 2
-    try:
-        schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        jsonschema.Draft202012Validator.check_schema(schema)
-    except Exception as exc:  # noqa: BLE001
-        print(f"FAIL: schema invalid: {exc}")
-        return 2
-    print(f"  schemas/verdict.v1.json   ok")
+    report = run_verify(
+        cache_path=session_mod.CACHE_PATH,
+        schemas_dir=SCHEMAS_DIR,
+    )
+
+    print(f"  schemas/verdict.v1.json   {'ok' if report.passed or not any('schema' in f and 'invalid' in f for f in report.failures) else 'FAIL'}")
     print(f"  state/                    {'ok' if STATE_DIR.is_dir() else 'MISSING'}")
     print(f"  config/                   {'ok' if CONFIG_DIR.is_dir() else 'MISSING'}")
-    print("verify ok (phase 0 checks only)")
+    print(f"  cache rows checked        {report.cache_rows_checked}")
+
+    if not report.passed:
+        print("FAIL: verify failed")
+        for f in report.failures:
+            print(f"  - {f}")
+        return 2
+
+    print("verify ok")
     return 0
 
 
@@ -107,6 +113,34 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     run_dir = session.checkpoint(verdicts)
     session.finalize()
+
+    # Phase 2: self-verify + feature_list status update (best-effort, opt-out via --no-self-verify)
+    if not getattr(args, "no_self_verify", False):
+        try:
+            from eval_agent.orchestration.self_verify import SelfVerifier  # noqa: PLC0415
+            sv_cfg = defaults.get("self_verify", {})
+            verifier = SelfVerifier(
+                sample_rate=float(sv_cfg.get("sample_rate", 0.05)),
+                agreement_floor=float(sv_cfg.get("agreement_floor", 0.95)),
+            )
+            sv_result = verifier.run(verdicts, judge=session._judge, run_dir=run_dir)
+            print(f"  self_verify:   {sv_result.agreements}/{sv_result.sample_size} agree "
+                  f"({sv_result.agreement_rate:.0%}, {'PASS' if sv_result.passed else 'FAIL'})")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  self_verify:   skipped ({exc})", file=sys.stderr)
+
+    feature_list_path = STATE_DIR / "feature_list.json"
+    if feature_list_path.is_file():
+        try:
+            from eval_agent.orchestration import feature_list as fl  # noqa: PLC0415
+            floor = float(defaults.get("passes_floor", defaults.get("threshold", {}).get("passes_floor", 0.80)))
+            fl.update_status_from_run(
+                feature_list_path=feature_list_path, run_dir=run_dir, precision_floor=floor,
+            )
+            print(f"  feature_list:  updated ({feature_list_path})")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  feature_list:  update skipped ({exc})", file=sys.stderr)
+
     print()
     print(f"  results.jsonl: {run_dir / 'results.jsonl'}")
     print(f"  summary.csv:   {run_dir / 'summary.csv'}")
@@ -172,14 +206,54 @@ def _cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_diff(_args: argparse.Namespace) -> int:
-    print("eval-agent diff — NOT YET IMPLEMENTED in Phase 0.")
-    return 1
+def _cmd_diff(args: argparse.Namespace) -> int:
+    """Compare two runs' results.jsonl and report precision regressions."""
+    from eval_agent.report.diff_runs import diff_runs, write_diff_markdown  # noqa: PLC0415
+
+    # Resolve STATE_DIR lazily so test monkeypatching of cli.STATE_DIR works.
+    state_dir = sys.modules[__name__].STATE_DIR
+    runs_dir = state_dir / "runs"
+    if not runs_dir.is_dir():
+        print(f"ERROR: runs dir missing at {runs_dir}", file=sys.stderr)
+        return 2
+
+    from_id = args.from_run
+    to_id = args.to
+    from_dir = runs_dir / from_id
+    to_dir = runs_dir / to_id
+    if not from_dir.is_dir():
+        print(f"ERROR: from-run dir missing: {from_dir}", file=sys.stderr)
+        return 2
+    if not to_dir.is_dir():
+        print(f"ERROR: to-run dir missing: {to_dir}", file=sys.stderr)
+        return 2
+
+    diff = diff_runs(from_run_dir=from_dir, to_run_dir=to_dir)
+    out = from_dir / f"diff_to_{to_id}.md"
+    write_diff_markdown(diff, out)
+
+    print(f"eval-agent diff: {from_id} -> {to_id}")
+    print(f"  features:   {len(diff.features)}")
+    print(f"  regressed:  {diff.n_regressed}")
+    print(f"  improved:   {diff.n_improved}")
+    print(f"  report:     {out}")
+    return 1 if diff.n_regressed > 0 else 0
 
 
 def _cmd_recover(_args: argparse.Namespace) -> int:
-    print("eval-agent recover — NOT YET IMPLEMENTED in Phase 0.")
-    return 1
+    """Rebuild verdict cache + bootstrap state files from ``state/runs/``."""
+    from eval_agent.orchestration import recover as recover_mod  # noqa: PLC0415
+
+    # Resolve STATE_DIR lazily so test monkeypatching of cli.STATE_DIR works.
+    state_dir = sys.modules[__name__].STATE_DIR
+    report = recover_mod.recover(state_dir=state_dir)
+    print("eval-agent recover — rebuilding state")
+    print(f"  state_dir:                  {state_dir}")
+    print(f"  cache_rebuilt:              {report.cache_rebuilt}")
+    print(f"  cache_entries_recovered:    {report.cache_entries_recovered}")
+    print(f"  feature_list_bootstrapped:  {report.feature_list_bootstrapped}")
+    print(f"  progress_md_bootstrapped:   {report.progress_md_bootstrapped}")
+    return 0
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -215,6 +289,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                        help="extract candidates + print counts; no Gemini calls")
     p_run.add_argument("--resume", action="store_true",
                        help="(Phase 2) resume an interrupted run")
+    p_run.add_argument("--no-self-verify", action="store_true",
+                       help="skip the 5%% re-judge self-verification pass after the run")
 
     p_report = sub.add_parser("report", help="regenerate report from a run")
     p_report.add_argument("--run", default="latest")
