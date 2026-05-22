@@ -73,6 +73,7 @@ class SessionConfig:
     evaluators: list[str]
     api_key: str
     dry_run: bool = False
+    no_cache: bool = False  # skip cache reads (still appends new verdicts)
 
     @classmethod
     def from_args(cls, args: Any, defaults: dict[str, Any]) -> "SessionConfig":
@@ -100,6 +101,7 @@ class SessionConfig:
             evaluators=evaluators,
             api_key=args.api_key or "",
             dry_run=bool(args.dry_run),
+            no_cache=bool(getattr(args, "no_cache", False)),
         )
 
 
@@ -213,16 +215,22 @@ class Session:
 
         if self._judge is None:
             self._judge = _build_judge(self.config)
-        cache_hits = sum(
-            1 for ev, c in candidates
-            if self._cache.get(judge_id=self._judge.id, prompt=ev.build_prompt(c))
-            is not None
-        )
+        if self.config.no_cache:
+            cache_hits = 0
+        else:
+            cache_hits = sum(
+                1 for ev, c in candidates
+                if self._cache.get(judge_id=self._judge.id, prompt=ev.build_prompt(c))
+                is not None
+            )
         self.stats.cache_hits = cache_hits
         self.stats.cache_misses = len(candidates) - cache_hits
 
         ui.section("Judging")
-        ui.kv("cache", f"{cache_hits} hits / {self.stats.cache_misses} misses")
+        if self.config.no_cache:
+            ui.kv("cache", "DISABLED (--no-cache; every call hits Gemini)")
+        else:
+            ui.kv("cache", f"{cache_hits} hits / {self.stats.cache_misses} misses")
 
         # Judge in parallel; rate-limiter inside the Judge enforces the RPM cap.
         verdicts: list[Verdict] = []
@@ -328,12 +336,13 @@ class Session:
         prompt = evaluator.build_prompt(candidate)
         key = VerdictCache.key(judge_id=self._judge.id, prompt=prompt)
 
-        cached = self._cache.get(judge_id=self._judge.id, prompt=prompt)
-        if cached is not None:
-            v = evaluator.parse_verdict(cached, candidate)
-            v.judge_id = self._judge.id
-            v.cache_key = key
-            return v
+        if not self.config.no_cache:
+            cached = self._cache.get(judge_id=self._judge.id, prompt=prompt)
+            if cached is not None:
+                v = evaluator.parse_verdict(cached, candidate)
+                v.judge_id = self._judge.id
+                v.cache_key = key
+                return v
 
         response = self._judge.judge(prompt=prompt, schema=self._schema)
         if response.verdict is not None:

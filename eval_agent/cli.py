@@ -314,6 +314,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                        help="(Phase 2) resume an interrupted run")
     p_run.add_argument("--no-self-verify", action="store_true",
                        help="skip the 5%% re-judge self-verification pass after the run")
+    p_run.add_argument("--no-cache", action="store_true",
+                       help="bypass the verdict cache on reads (every candidate is "
+                            "freshly judged). Fresh verdicts still overwrite the "
+                            "cache entry — use when you want to measure judge "
+                            "non-determinism on the full corpus, not just the "
+                            "5%% self-verify sample.")
 
     p_report = sub.add_parser("report", help="regenerate report from a run")
     p_report.add_argument("--run", default="latest")
