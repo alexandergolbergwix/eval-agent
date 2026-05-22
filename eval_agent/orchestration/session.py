@@ -41,9 +41,12 @@ from eval_agent.client.rate_limiter import RateLimiter
 from eval_agent.evaluators import REGISTRY, build as build_evaluator
 from eval_agent.evaluators._base import Candidate, Evaluator, Verdict
 from eval_agent.ingest import marc_extract, ner_results, pipeline_run
+from eval_agent.logging_setup import get_logger
 from eval_agent.report.csv_writer import write_csv
 from eval_agent.report.jsonl_writer import write_jsonl
 from eval_agent.report.markdown_report import write_markdown
+
+log = get_logger("eval_agent.session")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STATE_DIR = REPO_ROOT / "state"
@@ -235,17 +238,29 @@ class Session:
 
         # Judge in parallel; rate-limiter inside the Judge enforces the RPM cap.
         verdicts: list[Verdict] = []
+        errors_seen = 0
         t0 = time.time()
         with ThreadPoolExecutor(max_workers=self.config.parallel) as pool:
             futures = {
                 pool.submit(self._judge_one, ev, c): (ev, c) for ev, c in candidates
             }
             for i, fut in enumerate(as_completed(futures), 1):
-                verdicts.append(fut.result())
+                v = fut.result()
+                verdicts.append(v)
+                if v.error:
+                    errors_seen += 1
                 if i % 25 == 0 or i == len(futures):
                     el = time.time() - t0
-                    print(f"  judged {i}/{len(futures)} ({el:.0f}s elapsed)")
-        print(f"All {len(verdicts)} judgments done in {time.time()-t0:.0f}s.")
+                    err_note = f", {errors_seen} errors" if errors_seen else ""
+                    print(f"  judged {i}/{len(futures)} ({el:.0f}s elapsed{err_note})")
+        if errors_seen:
+            print(f"All {len(verdicts)} judgments done in {time.time()-t0:.0f}s "
+                  f"({errors_seen} errored — see results.jsonl 'error' field "
+                  f"or state/logs/ for traces).")
+        else:
+            print(f"All {len(verdicts)} judgments done in {time.time()-t0:.0f}s.")
+        log.debug("execute.done verdicts=%d errors=%d elapsed=%.1fs",
+                  len(verdicts), errors_seen, time.time() - t0)
         return verdicts
 
     # ── Phase 3: checkpoint ───────────────────────────────────────────
@@ -358,7 +373,16 @@ def _load_defaults() -> dict[str, Any]:
 
 
 def _load_schema() -> dict[str, Any]:
-    return json.loads(VERDICT_SCHEMA_PATH.read_text(encoding="utf-8"))
+    """Return the inner ``verdict`` sub-schema for the judge to enforce.
+
+    ``verdict.v1.json`` describes the full ``results.jsonl`` row (envelope
+    + verdict + metadata). The judge only emits the inner verdict object —
+    ``{name_ok, type_ok, role_ok, overall, reasoning}`` — so we hand it
+    just that slice. ``GeminiJudge`` further sanitizes the schema for the
+    Gemini ``responseSchema`` subset (no ``additionalProperties`` etc.).
+    """
+    full = json.loads(VERDICT_SCHEMA_PATH.read_text(encoding="utf-8"))
+    return full.get("properties", {}).get("verdict", full)
 
 
 def _build_judge(config: SessionConfig) -> Judge:

@@ -15,6 +15,9 @@ build/
 state/runs/*/results.jsonl.tmp
 state/runs/*/.in_progress
 
+# Debug logs (auto-pruned after 7 days; never source-control them)
+state/logs/
+
 # OS junk
 .DS_Store
 

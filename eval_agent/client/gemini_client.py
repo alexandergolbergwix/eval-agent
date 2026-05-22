@@ -27,6 +27,9 @@ from typing import Any
 
 from eval_agent.client.judge_interface import Judge, JudgeResponse
 from eval_agent.client.rate_limiter import RateLimiter
+from eval_agent.logging_setup import get_logger, redact, truncate
+
+log = get_logger("eval_agent.gemini")
 
 _ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -63,6 +66,11 @@ class GeminiJudge:
         self._top_p = top_p
         self._max_retries = max_retries
         self._retry_base_seconds = retry_base_seconds
+        log.debug(
+            "init model=%s api_key=%s thinking=%s max_out=%d temp=%s top_p=%s rpm_limiter=%r",
+            model, redact(api_key), thinking_level, max_output_tokens,
+            temperature, top_p, rate_limiter,
+        )
 
     # ── Public API ────────────────────────────────────────────────────
 
@@ -75,14 +83,28 @@ class GeminiJudge:
     ) -> JudgeResponse:
         """Send prompt + schema; return parsed verdict (or error)."""
         payload = self._payload(prompt, schema)
+        log.debug(
+            "judge.request model=%s prompt_chars=%d schema_keys=%s",
+            self.id, len(prompt), sorted(payload["generationConfig"]["responseSchema"].keys()),
+        )
         try:
             raw_text, in_tok, out_tok = self._call(payload, timeout=timeout)
         except Exception as exc:  # noqa: BLE001
+            log.debug("judge.transport_error %s", truncate(str(exc), 400))
             return JudgeResponse(
                 verdict=None, raw_text=None, error=str(exc), judge_id=self.id,
             )
 
         verdict, parse_err = self._parse(raw_text)
+        if parse_err:
+            log.debug("judge.parse_error err=%s raw=%s",
+                      truncate(parse_err, 200), truncate(raw_text, 200))
+        else:
+            log.debug(
+                "judge.response in_tok=%s out_tok=%s overall=%s",
+                in_tok, out_tok,
+                (verdict or {}).get("overall") if isinstance(verdict, dict) else None,
+            )
         return JudgeResponse(
             verdict=verdict,
             raw_text=raw_text,
@@ -103,7 +125,7 @@ class GeminiJudge:
                 "thinkingConfig": {"thinkingLevel": self._thinking_level},
                 "maxOutputTokens": self._max_output_tokens,
                 "responseMimeType": "application/json",
-                "responseSchema": schema,
+                "responseSchema": _sanitize_schema_for_gemini(schema),
             },
         }
 
@@ -133,6 +155,8 @@ class GeminiJudge:
                 return _extract_text_and_usage(data)
             except urllib.error.HTTPError as exc:
                 body_text = exc.read().decode("utf-8", errors="ignore")
+                log.debug("http_error code=%d attempt=%d body=%s",
+                          exc.code, attempt + 1, truncate(body_text, 300))
                 if exc.code == 429 and attempt < self._max_retries - 1:
                     wait = self._retry_base_seconds * (2 ** attempt)
                     time.sleep(wait)
@@ -140,6 +164,8 @@ class GeminiJudge:
                     continue
                 raise RuntimeError(f"HTTP {exc.code}: {body_text[:500]}") from exc
             except (urllib.error.URLError, TimeoutError) as exc:
+                log.debug("transient_network attempt=%d exc=%s",
+                          attempt + 1, truncate(str(exc), 200))
                 if attempt < self._max_retries - 1:
                     time.sleep(self._retry_base_seconds * (2 ** attempt))
                     last_err = RuntimeError(f"transient network: {exc}")
@@ -160,6 +186,41 @@ class GeminiJudge:
             return parsed, None
         except json.JSONDecodeError as exc:
             return None, f"PARSE_ERROR: {exc}: {text[:200]}"
+
+
+# Gemini's ``responseSchema`` accepts a small OpenAPI-style subset of JSON
+# Schema. Draft-2020-12 keywords like ``$schema``, ``$id``,
+# ``additionalProperties``, ``const``, ``pattern``, ``minimum``, ``maximum``
+# cause HTTP 400 "Unknown name" errors. Strip them recursively before sending.
+_GEMINI_UNSUPPORTED_KEYS = frozenset({
+    "$schema", "$id", "$ref", "$defs", "definitions",
+    "additionalProperties", "const", "pattern",
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+    "minItems", "maxItems", "minLength", "maxLength",
+    "title", "examples",
+})
+
+
+def _sanitize_schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of ``schema`` with Gemini-incompatible keys removed."""
+    if not isinstance(schema, dict):
+        return schema
+    out: dict[str, Any] = {}
+    for k, v in schema.items():
+        if k in _GEMINI_UNSUPPORTED_KEYS:
+            continue
+        if k == "properties" and isinstance(v, dict):
+            out[k] = {pk: _sanitize_schema_for_gemini(pv) for pk, pv in v.items()}
+        elif k == "items" and isinstance(v, dict):
+            out[k] = _sanitize_schema_for_gemini(v)
+        elif isinstance(v, dict):
+            out[k] = _sanitize_schema_for_gemini(v)
+        elif isinstance(v, list):
+            out[k] = [_sanitize_schema_for_gemini(item) if isinstance(item, dict) else item
+                      for item in v]
+        else:
+            out[k] = v
+    return out
 
 
 def _extract_text_and_usage(

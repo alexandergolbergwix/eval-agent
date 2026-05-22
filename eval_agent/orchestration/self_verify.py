@@ -6,14 +6,19 @@ of the already-rendered verdicts, then compares each new ``overall``
 against the original. If agreement drops below the configured floor
 (default 0.95), the session is treated as suspect.
 
-The re-judge call appends a salt suffix to the prompt so the
-on-disk verdict cache cannot short-circuit the call: every salted
-prompt is a fresh cache key.
+The re-judge bypasses the verdict cache by invoking ``judge.judge(...)``
+directly — the cache layer lives in ``Session._judge_one``, not in the
+``Judge`` protocol implementations. The prompt is therefore identical
+to the original judging pass; reaching the model again is what catches
+non-determinism (temperature drift, server-side variance), not a
+different input.
 
 Artefact:
     ``<run_dir>/self_verify.json`` — flat dict shaped like
     ``SelfVerifyResult`` (plus ``run_id``) that callers can consume
-    without re-importing the dataclass.
+    without re-importing the dataclass. Each disagreement record now
+    also carries ``error`` (when the redo-call errored) so a low
+    agreement rate can be triaged without re-running.
 """
 
 from __future__ import annotations
@@ -31,8 +36,6 @@ from eval_agent.evaluators._base import Candidate, Verdict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VERDICT_SCHEMA_PATH = REPO_ROOT / "config" / "schemas" / "verdict.v1.json"
-
-_SALT_SUFFIX = "\n\n[self-verify pass]"
 
 
 @dataclass
@@ -87,7 +90,7 @@ class SelfVerifier:
         disagreement_records: list[dict[str, Any]] = []
 
         for original in sample:
-            redo_overall = self._rejudge(original, judge=judge, schema=schema)
+            redo_overall, redo_error = self._rejudge(original, judge=judge, schema=schema)
             if redo_overall is not None and redo_overall == original.overall:
                 agreements += 1
             else:
@@ -97,6 +100,7 @@ class SelfVerifier:
                     "sub_type": original.sub_type,
                     "original_overall": original.overall,
                     "redo_overall": redo_overall,
+                    "error": redo_error,
                 })
 
         sample_size = len(sample)
@@ -139,17 +143,22 @@ class SelfVerifier:
         *,
         judge: Judge,
         schema: dict[str, Any],
-    ) -> str | None:
-        prompt = self._build_salted_prompt(verdict)
+    ) -> tuple[str | None, str | None]:
+        """Return ``(redo_overall, error)``; either may be ``None``."""
+        prompt = self._build_prompt(verdict)
         if prompt is None:
-            return None
+            return None, f"no evaluator registered for {verdict.evaluator_id!r}"
         response = judge.judge(prompt=prompt, schema=schema)
-        if response.error is not None or response.verdict is None:
-            return None
+        if response.error is not None:
+            return None, response.error
+        if response.verdict is None:
+            return None, "judge returned no verdict"
         overall = response.verdict.get("overall")
-        return str(overall) if overall is not None else None
+        if overall is None:
+            return None, "verdict missing 'overall' field"
+        return str(overall), None
 
-    def _build_salted_prompt(self, verdict: Verdict) -> str | None:
+    def _build_prompt(self, verdict: Verdict) -> str | None:
         cls = REGISTRY.get(verdict.evaluator_id)
         if cls is None:
             return None
@@ -162,7 +171,7 @@ class SelfVerifier:
             confidence=verdict.confidence,
             marc_context={},
         )
-        return evaluator.build_prompt(candidate) + _SALT_SUFFIX
+        return evaluator.build_prompt(candidate)
 
     def _write_artifact(
         self,

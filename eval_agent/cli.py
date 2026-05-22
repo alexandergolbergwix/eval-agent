@@ -133,7 +133,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if feature_list_path.is_file():
         try:
             from eval_agent.orchestration import feature_list as fl  # noqa: PLC0415
-            floor = float(defaults.get("passes_floor", defaults.get("threshold", {}).get("passes_floor", 0.80)))
+            pf_cfg = defaults.get("passes_floor", {})
+            if isinstance(pf_cfg, dict):
+                floor = float(pf_cfg.get("default", 0.80))
+            else:
+                floor = float(pf_cfg)
             fl.update_status_from_run(
                 feature_list_path=feature_list_path, run_dir=run_dir, precision_floor=floor,
             )
