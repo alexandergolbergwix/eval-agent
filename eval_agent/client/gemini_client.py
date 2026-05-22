@@ -117,16 +117,19 @@ class GeminiJudge:
     # ── Internals ─────────────────────────────────────────────────────
 
     def _payload(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        gen_cfg: dict[str, Any] = {
+            "temperature": self._temperature,
+            "topP": self._top_p,
+            "maxOutputTokens": self._max_output_tokens,
+            "responseMimeType": "application/json",
+            "responseSchema": _sanitize_schema_for_gemini(schema),
+        }
+        thinking = _thinking_config_for(self.id, self._thinking_level)
+        if thinking is not None:
+            gen_cfg["thinkingConfig"] = thinking
         return {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": self._temperature,
-                "topP": self._top_p,
-                "thinkingConfig": {"thinkingLevel": self._thinking_level},
-                "maxOutputTokens": self._max_output_tokens,
-                "responseMimeType": "application/json",
-                "responseSchema": _sanitize_schema_for_gemini(schema),
-            },
+            "generationConfig": gen_cfg,
         }
 
     def _call(
@@ -186,6 +189,28 @@ class GeminiJudge:
             return parsed, None
         except json.JSONDecodeError as exc:
             return None, f"PARSE_ERROR: {exc}: {text[:200]}"
+
+
+# ``thinkingConfig`` keys differ across Gemini generations:
+#
+#   3.x  →  thinkingLevel:  "low" | "high"
+#   2.5  →  thinkingBudget: int (0 = no thinking, positive = budget in tokens)
+#   2.0 and older → no thinking support, omit the block entirely
+#
+# Mis-applying these triggers HTTP 400 "Thinking level/budget is not supported
+# for this model." Resolve from the model id at request-build time.
+
+_THINKING_LEVEL_TO_BUDGET = {"low": 0, "medium": 1024, "high": 24576}
+
+
+def _thinking_config_for(model_id: str, level: str) -> dict[str, Any] | None:
+    name = model_id.lower()
+    if name.startswith("gemini-3"):
+        return {"thinkingLevel": level}
+    if name.startswith("gemini-2.5"):
+        return {"thinkingBudget": _THINKING_LEVEL_TO_BUDGET.get(level, 0)}
+    # gemini-2.0 and older — no thinking support.
+    return None
 
 
 # Gemini's ``responseSchema`` accepts a small OpenAPI-style subset of JSON
