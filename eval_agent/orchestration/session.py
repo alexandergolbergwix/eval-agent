@@ -45,6 +45,7 @@ from eval_agent.logging_setup import get_logger
 from eval_agent.report.csv_writer import write_csv
 from eval_agent.report.jsonl_writer import write_jsonl
 from eval_agent.report.markdown_report import write_markdown
+from eval_agent import ui
 
 log = get_logger("eval_agent.session")
 
@@ -170,26 +171,12 @@ class Session:
     # ── Phase 1: startup ──────────────────────────────────────────────
 
     def startup(self) -> None:
-        print("=" * 70)
-        print(f"eval-agent session  run_id={self._run_id}")
-        print(f"  judge:           {self.config.judge_model}")
-        print(f"  threshold:       {self.config.threshold}")
-        print(f"  rpm:             {self.config.rpm}  parallel={self.config.parallel}")
-        print(f"  evaluators:      {', '.join(self.config.evaluators)}")
-        print(f"  pipeline-output: {self.config.pipeline_output}")
-        print("=" * 70)
-
-        # Anthropic-pattern startup signals (informational in Phase 1)
-        log = _git_log(REPO_ROOT, lines=5)
-        if log:
-            print("\nRecent commits (eval-agent):")
-            for line in log:
-                print(f"  {line}")
-        tail = _progress_tail(PROGRESS_PATH, lines=20)
-        if tail:
-            print("\nProgress tail:")
-            for line in tail:
-                print(f"  {line}")
+        ui.header(f"eval-agent · session {self._run_id}")
+        ui.kv("judge", self.config.judge_model)
+        ui.kv("threshold", self.config.threshold)
+        ui.kv("rpm / parallel", f"{self.config.rpm} / {self.config.parallel}")
+        ui.kv("evaluators", ", ".join(self.config.evaluators))
+        ui.kv("pipeline output", self.config.pipeline_output)
 
     # ── Phase 2: execute ──────────────────────────────────────────────
 
@@ -198,7 +185,10 @@ class Session:
         marc_records = marc_extract.load(run.marc_extract)
         marc_index = marc_extract.index_by_id(marc_records)
         ner_records_list = ner_results.load(run.ner_results)
-        print(f"\nIngested {len(marc_records)} MARC + {len(ner_records_list)} NER records.")
+
+        ui.section("Ingest")
+        ui.kv("MARC records", len(marc_records))
+        ui.kv("NER records", len(ner_records_list))
 
         # Extract all candidates up-front so we can print a budget preview
         candidates: list[tuple[Evaluator, Candidate]] = []
@@ -213,12 +203,12 @@ class Session:
                 ):
                     candidates.append((ev, cand))
         self.stats.candidates_total = len(candidates)
-        print(f"Candidates above threshold {self.config.threshold}: {len(candidates)}")
-        for ev_id, n in _count_by_evaluator(candidates):
-            print(f"  {ev_id:20s} {n:>4d}")
+
+        ui.section(f"Candidates above threshold {self.config.threshold}  →  {len(candidates)}")
+        ui.summary_table([(ev_id, n) for ev_id, n in _count_by_evaluator(candidates)])
 
         if self.config.dry_run:
-            print("\n--dry-run: stopping before any judge calls.")
+            ui.warn("dry-run: stopping before any judge calls")
             return []
 
         if self._judge is None:
@@ -230,16 +220,15 @@ class Session:
         )
         self.stats.cache_hits = cache_hits
         self.stats.cache_misses = len(candidates) - cache_hits
-        eta_seconds = (self.stats.cache_misses / max(1, self.config.rpm)) * 60
-        print(
-            f"\nCache: {cache_hits} hits / {self.stats.cache_misses} misses. "
-            f"Min wall-clock: ~{int(eta_seconds)}s at {self.config.rpm} RPM."
-        )
+
+        ui.section("Judging")
+        ui.kv("cache", f"{cache_hits} hits / {self.stats.cache_misses} misses")
 
         # Judge in parallel; rate-limiter inside the Judge enforces the RPM cap.
         verdicts: list[Verdict] = []
         errors_seen = 0
         t0 = time.time()
+        total = len(candidates)
         with ThreadPoolExecutor(max_workers=self.config.parallel) as pool:
             futures = {
                 pool.submit(self._judge_one, ev, c): (ev, c) for ev, c in candidates
@@ -249,18 +238,20 @@ class Session:
                 verdicts.append(v)
                 if v.error:
                     errors_seen += 1
-                if i % 25 == 0 or i == len(futures):
-                    el = time.time() - t0
-                    err_note = f", {errors_seen} errors" if errors_seen else ""
-                    print(f"  judged {i}/{len(futures)} ({el:.0f}s elapsed{err_note})")
+                ui.progress_line(i, total,
+                                 elapsed=time.time() - t0,
+                                 errors=errors_seen)
+        ui.done_line()
+
+        elapsed = time.time() - t0
         if errors_seen:
-            print(f"All {len(verdicts)} judgments done in {time.time()-t0:.0f}s "
-                  f"({errors_seen} errored — see results.jsonl 'error' field "
-                  f"or state/logs/ for traces).")
+            ui.warn(f"{errors_seen} of {len(verdicts)} verdicts errored "
+                    f"({elapsed:.0f}s) — see results.jsonl 'error' field "
+                    f"or state/logs/")
         else:
-            print(f"All {len(verdicts)} judgments done in {time.time()-t0:.0f}s.")
+            ui.ok(f"{len(verdicts)} verdicts in {elapsed:.0f}s")
         log.debug("execute.done verdicts=%d errors=%d elapsed=%.1fs",
-                  len(verdicts), errors_seen, time.time() - t0)
+                  len(verdicts), errors_seen, elapsed)
         return verdicts
 
     # ── Phase 3: checkpoint ───────────────────────────────────────────

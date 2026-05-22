@@ -89,12 +89,13 @@ def _cmd_verify(_args: argparse.Namespace) -> int:
 def _cmd_run(args: argparse.Namespace) -> int:
     """Execute one Worker session against a pipeline output directory."""
     from eval_agent.orchestration.session import Session, SessionConfig, _load_defaults  # noqa: PLC0415
+    from eval_agent import ui  # noqa: PLC0415
 
     defaults = _load_defaults()
     try:
         config = SessionConfig.from_args(args, defaults)
     except ValueError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        ui.error(str(exc))
         return 2
 
     session = Session(config)
@@ -102,19 +103,20 @@ def _cmd_run(args: argparse.Namespace) -> int:
     try:
         verdicts = session.execute()
     except FileNotFoundError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        ui.error(str(exc))
         return 2
 
     if not verdicts and config.dry_run:
         return 0
     if not verdicts:
-        print("No verdicts produced (no candidates above threshold).")
+        ui.warn("no verdicts produced (no candidates above threshold)")
         return 0
 
     run_dir = session.checkpoint(verdicts)
     session.finalize()
 
-    # Phase 2: self-verify + feature_list status update (best-effort, opt-out via --no-self-verify)
+    # ── Self-verify (5% re-judge) ──
+    sv_summary = None
     if not getattr(args, "no_self_verify", False):
         try:
             from eval_agent.orchestration.self_verify import SelfVerifier  # noqa: PLC0415
@@ -124,11 +126,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 agreement_floor=float(sv_cfg.get("agreement_floor", 0.95)),
             )
             sv_result = verifier.run(verdicts, judge=session._judge, run_dir=run_dir)
-            print(f"  self_verify:   {sv_result.agreements}/{sv_result.sample_size} agree "
-                  f"({sv_result.agreement_rate:.0%}, {'PASS' if sv_result.passed else 'FAIL'})")
+            tag = "PASS" if sv_result.passed else "FAIL"
+            sv_summary = (f"{sv_result.agreements}/{sv_result.sample_size} agree "
+                          f"({sv_result.agreement_rate:.0%}, {tag})")
         except Exception as exc:  # noqa: BLE001
-            print(f"  self_verify:   skipped ({exc})", file=sys.stderr)
+            sv_summary = f"skipped ({exc})"
 
+    # ── Feature-list ledger update ──
+    fl_summary = None
     feature_list_path = STATE_DIR / "feature_list.json"
     if feature_list_path.is_file():
         try:
@@ -141,14 +146,28 @@ def _cmd_run(args: argparse.Namespace) -> int:
             fl.update_status_from_run(
                 feature_list_path=feature_list_path, run_dir=run_dir, precision_floor=floor,
             )
-            print(f"  feature_list:  updated ({feature_list_path})")
+            fl_summary = "updated"
         except Exception as exc:  # noqa: BLE001
-            print(f"  feature_list:  update skipped ({exc})", file=sys.stderr)
+            fl_summary = f"skipped ({exc})"
 
-    print()
-    print(f"  results.jsonl: {run_dir / 'results.jsonl'}")
-    print(f"  summary.csv:   {run_dir / 'summary.csv'}")
-    print(f"  report.md:     {run_dir / 'report.md'}")
+    # ── Final summary block ──
+    ui.section("Summary")
+    rows: list[tuple[str, object]] = [
+        ("full", session.stats.judged_full),
+        ("partial", session.stats.judged_partial),
+        ("fail", session.stats.judged_fail),
+        ("errors", session.stats.judged_error),
+    ]
+    if sv_summary:
+        rows.append(("self-verify", sv_summary))
+    if fl_summary:
+        rows.append(("feature_list", fl_summary))
+    ui.summary_table(rows)
+
+    ui.section("Artefacts")
+    ui.bullet(f"results.jsonl  {run_dir / 'results.jsonl'}")
+    ui.bullet(f"summary.csv    {run_dir / 'summary.csv'}")
+    ui.bullet(f"report.md      {run_dir / 'report.md'}")
     return 0
 
 

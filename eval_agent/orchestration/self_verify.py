@@ -202,7 +202,9 @@ class SelfVerifier:
 
 
 def _load_schema() -> dict[str, Any]:
-    return json.loads(VERDICT_SCHEMA_PATH.read_text(encoding="utf-8"))
+    """Return the inner verdict sub-schema (same slice the Session sends)."""
+    full = json.loads(VERDICT_SCHEMA_PATH.read_text(encoding="utf-8"))
+    return full.get("properties", {}).get("verdict", full)
 
 
 __all__ = ["SelfVerifyResult", "SelfVerifier"]
