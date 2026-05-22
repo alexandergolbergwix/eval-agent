@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv*/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+dist/
+build/
+
+# Cache + run artefacts that don't belong in source control
+state/runs/*/results.jsonl.tmp
+state/runs/*/.in_progress
+
+# OS junk
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Local env
+.env
+.env.local

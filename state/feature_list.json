@@ -1,0 +1,292 @@
+{
+  "version": 1,
+  "generated_at": "2026-05-22T10:39:01.071451+00:00",
+  "features": [
+    {
+      "id": "person_ner.AUTHOR",
+      "evaluator": "person_ner",
+      "sub_type": "AUTHOR",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "person_ner.TRANSCRIBER",
+      "evaluator": "person_ner",
+      "sub_type": "TRANSCRIBER",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "person_ner.TRANSLATOR",
+      "evaluator": "person_ner",
+      "sub_type": "TRANSLATOR",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "person_ner.COMMENTATOR",
+      "evaluator": "person_ner",
+      "sub_type": "COMMENTATOR",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "person_ner.OWNER",
+      "evaluator": "person_ner",
+      "sub_type": "OWNER",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "person_ner.EDITOR",
+      "evaluator": "person_ner",
+      "sub_type": "EDITOR",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "person_ner.CENSOR",
+      "evaluator": "person_ner",
+      "sub_type": "CENSOR",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "provenance_ner.OWNER",
+      "evaluator": "provenance_ner",
+      "sub_type": "OWNER",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "provenance_ner.DATE",
+      "evaluator": "provenance_ner",
+      "sub_type": "DATE",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "provenance_ner.COLLECTION",
+      "evaluator": "provenance_ner",
+      "sub_type": "COLLECTION",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "contents_ner.WORK",
+      "evaluator": "contents_ner",
+      "sub_type": "WORK",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "contents_ner.FOLIO",
+      "evaluator": "contents_ner",
+      "sub_type": "FOLIO",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "contents_ner.WORK_AUTHOR",
+      "evaluator": "contents_ner",
+      "sub_type": "WORK_AUTHOR",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "genre_classifier.Piyyutim",
+      "evaluator": "genre_classifier",
+      "sub_type": "Piyyutim",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "genre_classifier.Poetry",
+      "evaluator": "genre_classifier",
+      "sub_type": "Poetry",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "genre_classifier.Illustrated works (Manuscript)",
+      "evaluator": "genre_classifier",
+      "sub_type": "Illustrated works (Manuscript)",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "genre_classifier.Personal correspondence",
+      "evaluator": "genre_classifier",
+      "sub_type": "Personal correspondence",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "genre_classifier.Censored manuscripts",
+      "evaluator": "genre_classifier",
+      "sub_type": "Censored manuscripts",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "genre_classifier.Autograph manuscripts",
+      "evaluator": "genre_classifier",
+      "sub_type": "Autograph manuscripts",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "genre_classifier.Records (Documents)",
+      "evaluator": "genre_classifier",
+      "sub_type": "Records (Documents)",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "genre_classifier.Bibliographies",
+      "evaluator": "genre_classifier",
+      "sub_type": "Bibliographies",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    },
+    {
+      "id": "marc500_colophon.COLOPHON",
+      "evaluator": "marc500_colophon",
+      "sub_type": "COLOPHON",
+      "threshold": 0.85,
+      "status": {
+        "passes": false,
+        "attempts": 0,
+        "last_run": null,
+        "last_precision": null,
+        "notes": ""
+      }
+    }
+  ]
+}

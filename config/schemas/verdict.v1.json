@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eval-agent.local/schemas/verdict.v1.json",
+  "title": "Eval-agent verdict (v1)",
+  "description": "One Gemini-judged verdict over a single pipeline-output prediction.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "judge_id",
+    "record_id",
+    "evaluator_id",
+    "candidate",
+    "verdict"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "judge_id": {
+      "type": "string",
+      "description": "Model id of the judge that produced this verdict (e.g. 'gemini-3.1-pro-preview')."
+    },
+    "record_id": {
+      "type": "string",
+      "description": "MARC _control_number of the source record."
+    },
+    "evaluator_id": {
+      "type": "string",
+      "enum": ["person_ner", "provenance_ner", "contents_ner", "genre_classifier", "marc500_colophon"]
+    },
+    "sub_type": {
+      "type": ["string", "null"],
+      "description": "Free-form sub-category, e.g. 'AUTHOR', 'OWNER', 'WORK', 'Piyyutim'."
+    },
+    "candidate": {
+      "type": "object",
+      "description": "Raw payload of the prediction being judged, as emitted by the pipeline.",
+      "additionalProperties": true
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name_ok", "type_ok", "role_ok", "overall", "reasoning"],
+      "properties": {
+        "name_ok":   { "type": "string", "enum": ["yes", "partial", "no"] },
+        "type_ok":   { "type": "string", "enum": ["yes", "partial", "no"] },
+        "role_ok":   { "type": "string", "enum": ["yes", "partial", "no", "n/a"] },
+        "overall":   { "type": "string", "enum": ["full", "partial", "fail"] },
+        "reasoning": { "type": "string" }
+      }
+    },
+    "judged_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cache_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "error": {
+      "type": ["string", "null"],
+      "description": "If present, the verdict object is a placeholder and judging failed."
+    }
+  }
+}

@@ -1,0 +1,34 @@
+# eval-agent default configuration. CLI flags override these values.
+
+judge:
+  # Gemini model id used by default. Other options:
+  #   - "gemini-3.5-flash" (stable, ~150 RPM free tier, lower cost)
+  #   - "gemini-2.5-pro"   (older stable Pro)
+  id: "gemini-3.1-pro-preview"
+  endpoint: "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+  thinking_level: "low"          # "low" | "high" — keep CoT brief for structured tasks
+  max_output_tokens: 4096
+  temperature: 0.0
+  top_p: 0.95
+
+rate_limit:
+  rpm: 25                        # global sliding-window cap (60 RPM = free-tier ceiling on 3.1 Pro Preview)
+  parallel: 2                    # worker pool size — small to keep RPM honest
+  max_retries: 6
+  retry_base_seconds: 5
+
+threshold:
+  default: 0.85                  # auto-approve gate; entities below are skipped
+  per_evaluator:
+    marc500_colophon: 0.85       # raise above the per-fold 0.45 to reduce false-positive rate
+    genre_classifier: 0.85       # raise above 0.65 default
+
+self_verify:
+  sample_rate: 0.05              # 5% of verdicts re-judged at the end of each run
+  agreement_floor: 0.95          # below this, the run is flagged as a self-verify regression
+
+passes_floor:
+  default: 0.80                  # precision floor for a feature to be considered passing
+  per_evaluator:
+    person_ner: 0.70             # role-classification is hard; lower bar
+    marc500_colophon: 0.75       # tighter bar because of known precision issues
