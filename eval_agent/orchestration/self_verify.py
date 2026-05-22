@@ -13,6 +13,12 @@ to the original judging pass; reaching the model again is what catches
 non-determinism (temperature drift, server-side variance), not a
 different input.
 
+Sampling is stratified by (evaluator_id, sub_type) so a single
+record with many candidates can't dominate the sample. Each bucket
+contributes at least 1 verdict (when total verdicts ≥ number of
+buckets); the largest buckets are trimmed first when the
+rounded-up share overshoots the configured ``sample_rate``.
+
 Artefact:
     ``<run_dir>/self_verify.json`` — flat dict shaped like
     ``SelfVerifyResult`` (plus ``run_id``) that callers can consume
@@ -24,6 +30,7 @@ Artefact:
 from __future__ import annotations
 
 import json
+import math
 import random
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -132,10 +139,41 @@ class SelfVerifier:
             return []
         if self._sample_rate >= 1.0:
             return list(verdicts)
-        k = max(1, int(round(len(verdicts) * self._sample_rate)))
-        k = min(k, len(verdicts))
+
+        # Group by (evaluator_id, sub_type)
+        buckets: dict[tuple[str, str], list[Verdict]] = {}
+        for v in verdicts:
+            buckets.setdefault((v.evaluator_id, v.sub_type), []).append(v)
+
+        target_total = max(1, int(round(len(verdicts) * self._sample_rate)))
         rng = random.Random(self._seed)
-        return rng.sample(verdicts, k)
+
+        # Each bucket contributes ceil(target_total * bucket_share)
+        # then we trim from the largest buckets if we overshoot target_total.
+        n_total = len(verdicts)
+        bucket_targets: dict[tuple[str, str], int] = {}
+        for key, bucket in buckets.items():
+            share = len(bucket) / n_total
+            # ceil so every non-empty bucket gets at least 1
+            bucket_targets[key] = max(1, math.ceil(share * target_total))
+
+        # If sum overshoots, trim from buckets with the highest assigned count.
+        while sum(bucket_targets.values()) > target_total:
+            worst = max(bucket_targets, key=lambda k: bucket_targets[k])
+            if bucket_targets[worst] <= 1:
+                break  # never trim below 1
+            bucket_targets[worst] -= 1
+
+        # Stratified sample
+        sample: list[Verdict] = []
+        for key, bucket in buckets.items():
+            k = min(bucket_targets[key], len(bucket))
+            if k == len(bucket):
+                sample.extend(bucket)
+            else:
+                sample.extend(rng.sample(bucket, k))
+
+        return sample
 
     def _rejudge(
         self,

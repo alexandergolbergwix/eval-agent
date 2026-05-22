@@ -263,6 +263,65 @@ def _cmd_diff(args: argparse.Namespace) -> int:
     return 1 if diff.n_regressed > 0 else 0
 
 
+def _cmd_calibrate(args: argparse.Namespace) -> int:
+    """Compute per (evaluator, sub_type) confidence thresholds from a run."""
+    from eval_agent import calibrate as calibrate_mod  # noqa: PLC0415
+    from eval_agent import ui  # noqa: PLC0415
+
+    # Resolve STATE_DIR lazily so test monkeypatching of cli.STATE_DIR works.
+    state_dir = sys.modules[__name__].STATE_DIR
+    runs_dir = state_dir / "runs"
+    if not runs_dir.is_dir():
+        print(f"ERROR: runs dir missing at {runs_dir}", file=sys.stderr)
+        return 2
+
+    if args.run == "latest":
+        candidates = sorted(p.name for p in runs_dir.iterdir() if p.is_dir())
+        if not candidates:
+            print("No runs found.", file=sys.stderr)
+            return 2
+        run_id = candidates[-1]
+    else:
+        run_id = args.run
+
+    run_dir = runs_dir / run_id
+    if not run_dir.is_dir():
+        print(f"ERROR: run dir missing: {run_dir}", file=sys.stderr)
+        return 2
+
+    try:
+        report = calibrate_mod.calibrate_from_run(
+            run_dir=run_dir,
+            target_precision=args.target_precision,
+            floor_threshold=args.floor,
+        )
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    out_path = Path(args.out) if args.out else (run_dir / "per_sub_type_thresholds.yaml")
+    calibrate_mod.write_yaml(report, out_path)
+
+    ui.header(f"eval-agent calibrate · run {report.run_id}")
+    ui.kv("target_precision", f"{report.target_precision:.2f}")
+    ui.kv("floor_threshold", f"{report.floor_threshold:.2f}")
+    ui.kv("buckets", len(report.buckets))
+    ui.kv("output", out_path)
+
+    ui.section("Per-bucket thresholds")
+    rows: list[tuple[str, object]] = []
+    for b in report.buckets:
+        label = f"{b.evaluator_id}.{b.sub_type or '_'}"
+        status = "ok" if b.target_reached else "below-target"
+        value = (
+            f"t={b.threshold:.2f}  p={b.precision_at_threshold:.2f}  "
+            f"n={b.n_above_threshold}/{b.n_total}  [{status}]"
+        )
+        rows.append((label, value))
+    ui.summary_table(rows)
+    return 0
+
+
 def _cmd_recover(_args: argparse.Namespace) -> int:
     """Rebuild verdict cache + bootstrap state files from ``state/runs/``."""
     from eval_agent.orchestration import recover as recover_mod  # noqa: PLC0415
@@ -330,6 +389,21 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     sub.add_parser("recover", help="safe-mode: rebuild state from cache + git")
 
+    p_calibrate = sub.add_parser(
+        "calibrate",
+        help="emit per (evaluator, sub_type) confidence thresholds from a run",
+    )
+    p_calibrate.add_argument("--run", default="latest",
+                             help="run_id under state/runs/ or 'latest' (default)")
+    p_calibrate.add_argument("--target-precision", type=float, default=0.90,
+                             dest="target_precision",
+                             help="strict-precision target per bucket (default: 0.90)")
+    p_calibrate.add_argument("--floor", type=float, default=0.85,
+                             help="lowest threshold to ever recommend (default: 0.85)")
+    p_calibrate.add_argument("--out", default=None,
+                             help="output YAML path (default: "
+                                  "state/runs/<run_id>/per_sub_type_thresholds.yaml)")
+
     return p.parse_args(argv)
 
 
@@ -342,6 +416,7 @@ def main(argv: list[str] | None = None) -> int:
         "report": _cmd_report,
         "diff": _cmd_diff,
         "recover": _cmd_recover,
+        "calibrate": _cmd_calibrate,
     }
     return dispatch[args.cmd](args)
 

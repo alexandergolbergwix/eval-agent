@@ -423,6 +423,123 @@ class TestPhase2SelfVerify:
         assert rec["passed"] == result.passed
         assert "disagreements" in rec
 
+    def test_self_verify_stratified_sampling_covers_every_bucket(
+        self, tmp_path: Path,
+    ) -> None:
+        """Stratified sampling must include every (evaluator_id, sub_type)
+        bucket present in the input — a single record with many candidates
+        cannot starve the other buckets out."""
+        from eval_agent.evaluators._base import Verdict
+        from eval_agent.orchestration.self_verify import SelfVerifier
+
+        evaluators = [
+            "person_ner", "provenance_ner", "contents_ner",
+            "genre_classifier", "marc500_colophon",
+        ]
+        sub_types_by_eval = {
+            "person_ner": ["PERSON"],
+            "provenance_ner": ["OWNER", "DATE", "COLLECTION"],
+            "contents_ner": ["WORK", "FOLIO", "WORK_AUTHOR"],
+            "genre_classifier": ["GENRE"],
+            "marc500_colophon": ["COLOPHON"],
+        }
+        verdicts: list[Verdict] = []
+        expected_buckets: set[tuple[str, str]] = set()
+        idx = 0
+        for ev_id in evaluators:
+            for sub in sub_types_by_eval[ev_id]:
+                expected_buckets.add((ev_id, sub))
+                # 10 verdicts per bucket so target_total stays > num buckets
+                for _ in range(10):
+                    verdicts.append(Verdict(
+                        record_id=f"rec_{idx}",
+                        evaluator_id=ev_id,
+                        sub_type=sub,
+                        candidate_payload={},
+                        confidence=0.9,
+                        overall="full",
+                    ))
+                    idx += 1
+
+        verifier = SelfVerifier(sample_rate=0.1, seed=1337)
+        sample = verifier._sample(verdicts)
+
+        sampled_buckets = {(v.evaluator_id, v.sub_type) for v in sample}
+        assert sampled_buckets == expected_buckets, (
+            f"missing buckets: {expected_buckets - sampled_buckets}"
+        )
+
+    def test_self_verify_no_single_bucket_dominates_at_low_rate(
+        self, tmp_path: Path,
+    ) -> None:
+        """When one bucket has 60/162 verdicts and sample_rate=0.05 (k=8),
+        no single bucket may contribute more than 3 verdicts. The previous
+        unstratified random.sample lets the dominant bucket take 4+."""
+        from collections import Counter
+
+        from eval_agent.evaluators._base import Verdict
+        from eval_agent.orchestration.self_verify import SelfVerifier
+
+        verdicts: list[Verdict] = []
+        # Dominant bucket: 60 verdicts under contents_ner.FOLIO on one record
+        for i in range(60):
+            verdicts.append(Verdict(
+                record_id="990001801390205171",
+                evaluator_id="contents_ner",
+                sub_type="FOLIO",
+                candidate_payload={"folio_index": i},
+                confidence=0.9,
+                overall="full",
+            ))
+        # Remaining 102 verdicts spread across other (evaluator, sub_type)
+        spread = [
+            ("contents_ner", "WORK"),
+            ("contents_ner", "WORK_AUTHOR"),
+            ("provenance_ner", "OWNER"),
+            ("provenance_ner", "DATE"),
+            ("provenance_ner", "COLLECTION"),
+            ("person_ner", "PERSON"),
+            ("genre_classifier", "GENRE"),
+            ("marc500_colophon", "COLOPHON"),
+        ]
+        per_bucket = 102 // len(spread)
+        idx = 0
+        for ev_id, sub in spread:
+            for _ in range(per_bucket):
+                verdicts.append(Verdict(
+                    record_id=f"rec_{idx}",
+                    evaluator_id=ev_id,
+                    sub_type=sub,
+                    candidate_payload={},
+                    confidence=0.9,
+                    overall="full",
+                ))
+                idx += 1
+        # Pad any remainder into the first spread bucket
+        while len(verdicts) < 162:
+            ev_id, sub = spread[0]
+            verdicts.append(Verdict(
+                record_id=f"rec_{idx}",
+                evaluator_id=ev_id,
+                sub_type=sub,
+                candidate_payload={},
+                confidence=0.9,
+                overall="full",
+            ))
+            idx += 1
+
+        assert len(verdicts) == 162
+
+        verifier = SelfVerifier(sample_rate=0.05, seed=1337)
+        sample = verifier._sample(verdicts)
+
+        counts = Counter((v.evaluator_id, v.sub_type) for v in sample)
+        worst_key, worst_n = counts.most_common(1)[0]
+        assert worst_n <= 3, (
+            f"bucket {worst_key} dominated the sample with {worst_n} verdicts; "
+            f"full distribution: {dict(counts)}"
+        )
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Phase 2 · Test group 5 — feature_list.json status updates
