@@ -47,9 +47,10 @@ def test_feature_list_bootstrap_is_idempotent(tmp_path: Path, monkeypatch: pytes
     payload1 = fl.bootstrap()
     payload2 = fl.bootstrap()  # should NOT overwrite — returns same content
     assert payload1["features"] == payload2["features"]
-    # Sanity: exactly 22 features (7 person_ner + 3 prov + 3 contents
-    # + 8 genre + 1 marc500 colophon). Update if _DEFAULT_SUBTYPES grows.
-    assert len(payload1["features"]) == 22
+    # Sanity: exactly 21 features (7 person_ner + 3 prov + 3 contents
+    # + 8 genre). The marc500 colophon classifier was removed
+    # 2026-05-23 due to 6 % strict precision (see registry).
+    assert len(payload1["features"]) == 21
     # And every feature has the canonical status keys
     required_keys = {"passes", "attempts", "last_run", "last_precision", "notes"}
     for f in payload1["features"]:

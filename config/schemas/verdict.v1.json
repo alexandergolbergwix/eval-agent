@@ -28,7 +28,7 @@
     },
     "evaluator_id": {
       "type": "string",
-      "enum": ["person_ner", "provenance_ner", "contents_ner", "genre_classifier", "marc500_colophon"]
+      "enum": ["person_ner", "provenance_ner", "contents_ner", "genre_classifier"]
     },
     "sub_type": {
       "type": ["string", "null"],

@@ -50,7 +50,7 @@ def _config(
         judge_model=judge_model,
         evaluators=evaluators or [
             "person_ner", "provenance_ner", "contents_ner",
-            "genre_classifier", "marc500_colophon",
+            "genre_classifier"
         ],
         api_key="dummy",
         dry_run=False,
@@ -252,7 +252,7 @@ class TestPhase2Diff:
         # Should mention at least one evaluator id
         assert any(ev in text for ev in (
             "person_ner", "provenance_ner", "contents_ner",
-            "genre_classifier", "marc500_colophon",
+            "genre_classifier"
         ))
 
     def test_diff_cli_exit_codes(
@@ -434,14 +434,13 @@ class TestPhase2SelfVerify:
 
         evaluators = [
             "person_ner", "provenance_ner", "contents_ner",
-            "genre_classifier", "marc500_colophon",
+            "genre_classifier"
         ]
         sub_types_by_eval = {
             "person_ner": ["PERSON"],
             "provenance_ner": ["OWNER", "DATE", "COLLECTION"],
             "contents_ner": ["WORK", "FOLIO", "WORK_AUTHOR"],
             "genre_classifier": ["GENRE"],
-            "marc500_colophon": ["COLOPHON"],
         }
         verdicts: list[Verdict] = []
         expected_buckets: set[tuple[str, str]] = set()
@@ -500,7 +499,6 @@ class TestPhase2SelfVerify:
             ("provenance_ner", "COLLECTION"),
             ("person_ner", "PERSON"),
             ("genre_classifier", "GENRE"),
-            ("marc500_colophon", "COLOPHON"),
         ]
         per_bucket = 102 // len(spread)
         idx = 0

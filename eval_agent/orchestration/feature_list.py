@@ -31,7 +31,8 @@ _DEFAULT_SUBTYPES: dict[str, list[str]] = {
                          "Personal correspondence", "Censored manuscripts",
                          "Autograph manuscripts", "Records (Documents)",
                          "Bibliographies"],
-    "marc500_colophon": ["COLOPHON"],
+    # ``marc500_colophon`` removed 2026-05-23 (6 % strict precision —
+    # see eval_agent/evaluators/__init__.py).
 }
 
 

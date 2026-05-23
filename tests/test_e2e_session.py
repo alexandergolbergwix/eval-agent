@@ -54,7 +54,7 @@ def _config(
         judge_model=judge_model,
         evaluators=evaluators or [
             "person_ner", "provenance_ner", "contents_ner",
-            "genre_classifier", "marc500_colophon",
+            "genre_classifier"
         ],
         api_key="dummy-not-used-by-mock",
         dry_run=dry_run,
@@ -112,7 +112,7 @@ def test_e2e_happy_path_all_evaluators(
         assert rec["judge_id"] == "mock-judge-v1"
         assert rec["evaluator_id"] in {
             "person_ner", "provenance_ner", "contents_ner",
-            "genre_classifier", "marc500_colophon",
+            "genre_classifier"
         }
         for k in ("name_ok", "type_ok", "role_ok", "overall", "reasoning"):
             assert k in rec["verdict"]
@@ -199,7 +199,7 @@ def test_e2e_evaluator_subset_only_runs_selected(
 
     # The other 4 evaluators contribute zero rows to summary.csv
     csv_text = (run_dir / "summary.csv").read_text(encoding="utf-8")
-    for other in ("provenance_ner", "contents_ner", "genre_classifier", "marc500_colophon"):
+    for other in ("provenance_ner", "contents_ner", "genre_classifier"):
         assert other not in csv_text
 
 

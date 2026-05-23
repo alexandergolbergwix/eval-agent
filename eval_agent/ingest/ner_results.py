@@ -2,15 +2,17 @@
 
 Stage 2 of the pipeline emits one record per input row with:
 
-  - ``entities``           — list of entity dicts (source ∈ {person_ner,
-                              provenance_ner, contents_ner})
-  - ``ml_genres``          — list of {label, confidence}
-  - ``ml_colophon_sentences`` — list[str] (or list[dict] in older pipeline versions)
+  - ``entities``   — list of entity dicts (source ∈ {person_ner,
+                      provenance_ner, contents_ner})
+  - ``ml_genres``  — list of {label, confidence}
 
 Each entity dict carries ``confidence`` (always present) and may
 carry ``model_confidence`` (person NER only — real softmax over the
 span's tokens). The eval-agent uses ``confidence`` uniformly across
 all sources — see pipeline CLAUDE.md Rule 41.
+
+NOTE: ``ml_colophon_sentences`` was removed 2026-05-23 — the MARC500
+colophon classifier was retired due to 6 % strict precision.
 """
 
 from __future__ import annotations
@@ -31,29 +33,6 @@ def get_entities(record: dict[str, Any], source: str) -> list[dict[str, Any]]:
 
 def get_ml_genres(record: dict[str, Any]) -> list[dict[str, Any]]:
     return list(record.get("ml_genres") or [])
-
-
-def get_ml_colophon_sentences(record: dict[str, Any]) -> list[dict[str, Any]]:
-    """Normalise ``ml_colophon_sentences`` to a list of ``{sentence, confidence}``.
-
-    Old pipeline versions emit ``list[str]``; new emit ``list[dict]``. We
-    return the dict shape uniformly so evaluators don't need to branch.
-    """
-    raw = record.get("ml_colophon_sentences") or []
-    out: list[dict[str, Any]] = []
-    for item in raw:
-        if isinstance(item, str):
-            sentence = item
-            conf = 1.0  # passed the per-fold threshold during classification
-        elif isinstance(item, dict):
-            sentence = item.get("text") or item.get("sentence") or ""
-            conf = float(item.get("confidence", 1.0))
-        else:
-            continue
-        if not sentence:
-            continue
-        out.append({"sentence": sentence, "confidence": conf})
-    return out
 
 
 def get_confidence(entity: dict[str, Any]) -> float:

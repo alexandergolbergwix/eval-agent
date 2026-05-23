@@ -100,8 +100,8 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
+        "attempts": 5,
+        "last_run": "20260523T100216837564Z",
         "last_precision": 1.0,
         "notes": ""
       }
@@ -113,8 +113,8 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
+        "attempts": 5,
+        "last_run": "20260523T100216837564Z",
         "last_precision": 1.0,
         "notes": ""
       }
@@ -126,8 +126,8 @@
       "threshold": 0.85,
       "status": {
         "passes": false,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
+        "attempts": 5,
+        "last_run": "20260523T100216837564Z",
         "last_precision": 0.0,
         "notes": ""
       }
@@ -139,9 +139,9 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
-        "last_precision": 0.8484848484848485,
+        "attempts": 5,
+        "last_run": "20260523T100216837564Z",
+        "last_precision": 0.875,
         "notes": ""
       }
     },
@@ -152,9 +152,9 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
-        "last_precision": 0.9555555555555556,
+        "attempts": 5,
+        "last_run": "20260523T100216837564Z",
+        "last_precision": 1.0,
         "notes": ""
       }
     },
@@ -165,9 +165,9 @@
       "threshold": 0.85,
       "status": {
         "passes": false,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
-        "last_precision": 0.5,
+        "attempts": 5,
+        "last_run": "20260523T100216837564Z",
+        "last_precision": 0.0,
         "notes": ""
       }
     },
@@ -204,8 +204,8 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
+        "attempts": 5,
+        "last_run": "20260523T100216837564Z",
         "last_precision": 1.0,
         "notes": ""
       }
@@ -230,8 +230,8 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
+        "attempts": 5,
+        "last_run": "20260523T100216837564Z",
         "last_precision": 1.0,
         "notes": ""
       }
@@ -243,8 +243,8 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
+        "attempts": 5,
+        "last_run": "20260523T100216837564Z",
         "last_precision": 1.0,
         "notes": ""
       }
@@ -282,8 +282,8 @@
       "threshold": 0.85,
       "status": {
         "passes": false,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
+        "attempts": 5,
+        "last_run": "20260523T100216837564Z",
         "last_precision": 0.06,
         "notes": ""
       }
