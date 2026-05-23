@@ -7,6 +7,21 @@ from typing import Any, Iterable
 from eval_agent.evaluators._base import Candidate, Evaluator
 from eval_agent.ingest import marc_extract, ner_results
 
+# Pipeline's role → MARC field map (mirrors
+# ``converter.authority.ner_post_filters._PERSON_ROLE_TO_MARC_FIELDS``).
+# Duplicated here so the eval-agent stays file-coupled to the pipeline
+# repo (Rule 48) — no Python import across the project boundary.
+_ROLE_TO_FIELDS: dict[str, tuple[str, ...]] = {
+    "AUTHOR":       ("authors",),
+    "TRANSCRIBER":  ("colophon_text", "data_from_colophon.scribe",
+                     "contributors"),
+    "TRANSLATOR":   ("contributors", "notes"),
+    "COMMENTATOR":  ("contributors", "notes"),
+    "EDITOR":       ("contributors",),
+    "CENSOR":       ("notes", "contributors"),
+    "OWNER":        ("provenance", "notes"),
+}
+
 
 class PersonNERevaluator(Evaluator):
     id = "person_ner"
@@ -31,13 +46,21 @@ class PersonNERevaluator(Evaluator):
             conf = ner_results.get_confidence(ent)
             if conf < threshold:
                 continue
+            role = str(ent.get("role", "")).upper()
             yield Candidate(
                 record_id=rid,
                 evaluator_id=self.id,
-                sub_type=str(ent.get("role", "")),
+                sub_type=role,
                 payload=dict(ent),
                 confidence=conf,
                 marc_context=ctx,
+                # F8 grounding signal (forwarded from ner_results.json
+                # when present; safe defaults when the file pre-dates
+                # F8 and ``grounded`` etc. are missing).
+                grounded=ent.get("grounded") if isinstance(ent.get("grounded"), bool) else None,
+                grounded_field=ent.get("grounded_field"),
+                exists_in=list(ent.get("exists_in") or []),
+                role_fields=list(_ROLE_TO_FIELDS.get(role, ())),
             )
 
     def build_prompt(self, candidate: Candidate) -> str:

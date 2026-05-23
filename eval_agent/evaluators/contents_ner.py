@@ -7,6 +7,15 @@ from typing import Any, Iterable
 from eval_agent.evaluators._base import Candidate, Evaluator
 from eval_agent.ingest import marc_extract, ner_results
 
+# Pipeline's type → MARC field map (mirrors
+# ``converter.authority.ner_post_filters._CONTENTS_TYPE_TO_MARC_FIELDS``).
+_TYPE_TO_FIELDS: dict[str, tuple[str, ...]] = {
+    "WORK":        ("contents", "notes", "canonical_references",
+                    "colophon_text"),
+    "FOLIO":       ("contents", "notes"),
+    "WORK_AUTHOR": ("contents", "notes", "canonical_references"),
+}
+
 
 class ContentsNERevaluator(Evaluator):
     id = "contents_ner"
@@ -30,13 +39,18 @@ class ContentsNERevaluator(Evaluator):
             conf = ner_results.get_confidence(ent)
             if conf < threshold:
                 continue
+            etype = str(ent.get("type", "")).upper()
             yield Candidate(
                 record_id=rid,
                 evaluator_id=self.id,
-                sub_type=str(ent.get("type", "")),
+                sub_type=etype,
                 payload=dict(ent),
                 confidence=conf,
                 marc_context=ctx,
+                grounded=ent.get("grounded") if isinstance(ent.get("grounded"), bool) else None,
+                grounded_field=ent.get("grounded_field"),
+                exists_in=list(ent.get("exists_in") or []),
+                role_fields=list(_TYPE_TO_FIELDS.get(etype, ("contents", "notes"))),
             )
 
     def build_prompt(self, candidate: Candidate) -> str:

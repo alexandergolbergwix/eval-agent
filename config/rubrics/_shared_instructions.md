@@ -64,3 +64,23 @@ Tiebreaker: if a row matches both `partial` and `fail`, choose `fail`
 If the MARC context block is empty (no relevant fields present), set
 `name_ok = no` and `reasoning = "no MARC context to verify against"`.
 Never fabricate evidence.
+
+## The deterministic MARC-grounding signal — trust it
+
+Every prompt now includes a **"Deterministic MARC-grounding signal"**
+block produced by the pipeline's F8 post-filter. It reports one of
+three states **after a deterministic substring/token-set search has
+already been run** for you:
+
+| Signal STATE | What it means | Default verdict guidance |
+|--------------|---------------|--------------------------|
+| **ROLE-GROUNDED** | The predicted text is in the MARC field that the role/type implies. | Default to `name_ok = yes` AND `role_ok = yes` (for persons). Only override when the predicted text itself is malformed (typo / mis-segmentation). |
+| **WRONG-FIELD** | The text appears in MARC, but in a different field than the role implies. | The role is almost certainly wrong. Set `role_ok = no` (for persons) or `type_ok = no` / `partial` (for non-person). `name_ok` is still `yes` because the name IS in MARC — the entity is real, just mis-routed. |
+| **DISCOVERY** | The text was not found in any structured MARC field. | Be conservative: default to `name_ok = no` UNLESS you can quote the predicted text verbatim from the MARC context block above (i.e., it lives in a free-text note the deterministic search missed due to script normalisation). |
+
+**Why this matters:** Gemini's own "is X in MARC?" search varies
+from call to call. The pipeline already ran an exact deterministic
+match for you. Use it. Disagreeing with the grounding state requires
+a specific reason in `reasoning` (e.g., "predicted text is a typo
+of authors[0].name" — that's allowed; "I prefer to read it
+differently" — that's not).

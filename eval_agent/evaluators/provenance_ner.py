@@ -7,6 +7,14 @@ from typing import Any, Iterable
 from eval_agent.evaluators._base import Candidate, Evaluator
 from eval_agent.ingest import marc_extract, ner_results
 
+# Pipeline's type → MARC field map (mirrors
+# ``converter.authority.ner_post_filters._PROVENANCE_TYPE_TO_MARC_FIELDS``).
+_TYPE_TO_FIELDS: dict[str, tuple[str, ...]] = {
+    "OWNER":      ("provenance", "notes"),
+    "DATE":       ("colophon_text", "provenance", "notes", "dates"),
+    "COLLECTION": ("provenance", "notes"),
+}
+
 
 class ProvenanceNERevaluator(Evaluator):
     id = "provenance_ner"
@@ -30,13 +38,18 @@ class ProvenanceNERevaluator(Evaluator):
             conf = ner_results.get_confidence(ent)
             if conf < threshold:
                 continue
+            etype = str(ent.get("type", "")).upper()
             yield Candidate(
                 record_id=rid,
                 evaluator_id=self.id,
-                sub_type=str(ent.get("type", "")),
+                sub_type=etype,
                 payload=dict(ent),
                 confidence=conf,
                 marc_context=ctx,
+                grounded=ent.get("grounded") if isinstance(ent.get("grounded"), bool) else None,
+                grounded_field=ent.get("grounded_field"),
+                exists_in=list(ent.get("exists_in") or []),
+                role_fields=list(_TYPE_TO_FIELDS.get(etype, ("provenance", "notes"))),
             )
 
     def build_prompt(self, candidate: Candidate) -> str:
