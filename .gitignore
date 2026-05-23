@@ -11,7 +11,12 @@ __pycache__/
 dist/
 build/
 
-# Cache + run artefacts that don't belong in source control
+# Cache + run artefacts that don't belong in source control.
+# The verdict cache + per-run output directories are regenerable
+# from a fresh ``make run`` (or ``eval-agent recover``). Committing
+# them would bloat the repo and leak per-prompt Gemini responses.
+state/cache/
+state/runs/*/
 state/runs/*/results.jsonl.tmp
 state/runs/*/.in_progress
 
