@@ -1,0 +1,437 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1180"
+     font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
+     font-size="13" fill="#1f2937">
+  <title>eval-agent — System Design</title>
+
+  <!-- ── Defs: arrowheads + shadow ───────────────────────────────────── -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#475569"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#15803d"/>
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#7c3aed"/>
+    </marker>
+    <filter id="card-shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feOffset in="b" dx="0" dy="2" result="o"/>
+      <feComponentTransfer in="o" result="oo">
+        <feFuncA type="linear" slope="0.18"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode in="oo"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <style>
+      .h1   { font-size: 22px; font-weight: 700; fill: #0f172a; }
+      .h2   { font-size: 11px; font-weight: 700; fill: #475569;
+              letter-spacing: 0.06em; text-transform: uppercase; }
+      .title{ font-size: 14px; font-weight: 600; fill: #0f172a; }
+      .body { font-size: 12px; fill: #334155; }
+      .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+              font-size: 11px; fill: #1e293b; }
+      .mute { font-size: 11px; fill: #64748b; }
+      .lbl  { font-size: 10.5px; fill: #475569; font-style: italic; }
+    </style>
+  </defs>
+
+  <!-- ── Background ──────────────────────────────────────────────────── -->
+  <rect width="1600" height="1180" fill="#f8fafc"/>
+
+  <!-- ── Title block ─────────────────────────────────────────────────── -->
+  <text x="40" y="48" class="h1">eval-agent — System Design</text>
+  <text x="40" y="72" class="mute">
+    Long-running Gemini-based evaluation harness for the MHM Pipeline · file-coupled (no Python imports across the boundary) · Anthropic-style two-agent harness
+  </text>
+
+  <!-- ── Legend ──────────────────────────────────────────────────────── -->
+  <g transform="translate(1050,38)">
+    <text x="0" y="0" class="h2">Legend</text>
+    <g transform="translate(0,14)">
+      <rect x="0"   y="0"  width="18" height="12" fill="#fef3c7" stroke="#f59e0b"/>
+      <text x="24"  y="10" class="body">Input / external file</text>
+      <rect x="170" y="0"  width="18" height="12" fill="#dbeafe" stroke="#3b82f6"/>
+      <text x="194" y="10" class="body">Orchestration</text>
+      <rect x="300" y="0"  width="18" height="12" fill="#dcfce7" stroke="#16a34a"/>
+      <text x="324" y="10" class="body">Compute</text>
+    </g>
+    <g transform="translate(0,32)">
+      <rect x="0"   y="0"  width="18" height="12" fill="#ede9fe" stroke="#7c3aed"/>
+      <text x="24"  y="10" class="body">Cache / state</text>
+      <rect x="170" y="0"  width="18" height="12" fill="#fee2e2" stroke="#ef4444"/>
+      <text x="194" y="10" class="body">Output / artifact</text>
+      <rect x="300" y="0"  width="18" height="12" fill="#f3f4f6" stroke="#6b7280"/>
+      <text x="324" y="10" class="body">External API</text>
+    </g>
+  </g>
+
+  <!-- ───────────────────────────────────────────────────────────────────
+       LEFT COLUMN — Inputs
+       ─────────────────────────────────────────────────────────────────── -->
+
+  <text x="40" y="120" class="h2">Inputs (file-coupled)</text>
+
+  <!-- MHM Pipeline outputs -->
+  <g filter="url(#card-shadow)">
+    <rect x="40" y="135" width="260" height="120" rx="10"
+          fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="56" y="160" class="title">MHM Pipeline outputs</text>
+    <text x="56" y="180" class="mono">marc_extracted.json</text>
+    <text x="56" y="198" class="mono">ner_results.json</text>
+    <text x="56" y="216" class="mute">(F8 grounding: ``grounded``,</text>
+    <text x="56" y="231" class="mute"> ``grounded_field``, ``exists_in``)</text>
+    <text x="56" y="248" class="lbl">eval/work/  (read-only)</text>
+  </g>
+
+  <!-- Config files -->
+  <g filter="url(#card-shadow)">
+    <rect x="40" y="275" width="260" height="120" rx="10"
+          fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="56" y="300" class="title">Config</text>
+    <text x="56" y="320" class="mono">config/default.yaml</text>
+    <text x="56" y="338" class="mono">config/rubrics/*.md</text>
+    <text x="56" y="356" class="mono">config/schemas/verdict.v1.json</text>
+    <text x="56" y="378" class="lbl">judge id · RPM · self-verify · floor</text>
+  </g>
+
+  <!-- Env / secrets -->
+  <g filter="url(#card-shadow)">
+    <rect x="40" y="415" width="260" height="100" rx="10"
+          fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="56" y="440" class="title">Environment</text>
+    <text x="56" y="460" class="mono">GEMINI_API_KEY</text>
+    <text x="56" y="478" class="mono">EVAL_AGENT_DEBUG=1 (optional)</text>
+    <text x="56" y="498" class="lbl">never persisted; redact() in logs</text>
+  </g>
+
+  <!-- ───────────────────────────────────────────────────────────────────
+       CENTER COLUMN — CLI + Orchestration
+       ─────────────────────────────────────────────────────────────────── -->
+
+  <text x="350" y="120" class="h2">CLI surface</text>
+
+  <g filter="url(#card-shadow)">
+    <rect x="350" y="135" width="700" height="80" rx="10"
+          fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="370" y="160" class="title">eval-agent CLI</text>
+    <text x="370" y="183" class="mono">run · verify · diff · recover · calibrate · report · doctor</text>
+    <text x="370" y="202" class="mute">colour-coded UI · in-place progress bar · NO_COLOR / TTY auto-detect</text>
+  </g>
+
+  <text x="350" y="245" class="h2">Orchestration — Session lifecycle</text>
+
+  <g filter="url(#card-shadow)">
+    <rect x="350" y="260" width="700" height="180" rx="10"
+          fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="370" y="285" class="title">Session</text>
+    <text x="370" y="306" class="body">startup() — git log · progress.md tail · safety preamble</text>
+    <text x="370" y="324" class="body">execute() — extract candidates · cache-aware judge · parallel</text>
+    <text x="370" y="342" class="body">checkpoint(verdicts) — write per-run artefacts under state/runs/</text>
+    <text x="370" y="360" class="body">finalize() — append session block to progress.md</text>
+    <text x="370" y="384" class="mute">Pro-safe rate limits auto-applied when judge id contains "pro"</text>
+
+    <!-- Inset boxes: SessionConfig + RateLimiter -->
+    <rect x="700" y="280" width="170" height="50" rx="6"
+          fill="#ffffff" stroke="#93c5fd"/>
+    <text x="710" y="298" class="mono">SessionConfig</text>
+    <text x="710" y="313" class="lbl">judge · threshold · rpm ·</text>
+    <text x="710" y="326" class="lbl">parallel · no_cache · dry_run</text>
+
+    <rect x="880" y="280" width="156" height="50" rx="6"
+          fill="#ffffff" stroke="#93c5fd"/>
+    <text x="890" y="298" class="mono">RateLimiter</text>
+    <text x="890" y="313" class="lbl">sliding window · thread-safe</text>
+    <text x="890" y="326" class="lbl">hard RPM cap</text>
+  </g>
+
+  <!-- ───────────────────────────────────────────────────────────────────
+       MIDDLE ROW — Ingest · Evaluators · Judge
+       ─────────────────────────────────────────────────────────────────── -->
+
+  <text x="40" y="555" class="h2">Compute</text>
+
+  <!-- Ingest -->
+  <g filter="url(#card-shadow)">
+    <rect x="40" y="570" width="260" height="180" rx="10"
+          fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="56" y="595" class="title">ingest/</text>
+    <text x="56" y="615" class="mono">marc_extract.py</text>
+    <text x="56" y="633" class="mono">ner_results.py</text>
+    <text x="56" y="651" class="mono">pipeline_run.py</text>
+    <text x="56" y="675" class="mute">pure JSON readers — no</text>
+    <text x="56" y="690" class="mute">pipeline imports (Rule 48)</text>
+    <text x="56" y="715" class="lbl">→ Candidate stream</text>
+    <text x="56" y="730" class="lbl">  with F8 grounding fields</text>
+  </g>
+
+  <!-- Evaluators -->
+  <g filter="url(#card-shadow)">
+    <rect x="320" y="570" width="260" height="180" rx="10"
+          fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="336" y="595" class="title">evaluators/ (5)</text>
+    <text x="336" y="615" class="body">person_ner · provenance_ner</text>
+    <text x="336" y="633" class="body">contents_ner</text>
+    <text x="336" y="651" class="body">genre_classifier</text>
+    <text x="336" y="669" class="body">marc500_colophon</text>
+    <text x="336" y="691" class="mute">Each subclass implements:</text>
+    <text x="336" y="706" class="mono">extract_candidates()</text>
+    <text x="336" y="722" class="mono">build_prompt() ← injects F8</text>
+    <text x="336" y="738" class="mono">parse_verdict()</text>
+  </g>
+
+  <!-- Judge -->
+  <g filter="url(#card-shadow)">
+    <rect x="600" y="570" width="260" height="180" rx="10"
+          fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="616" y="595" class="title">client/ — Judge protocol</text>
+    <text x="616" y="616" class="mono">GeminiJudge (3.x / 2.5 / 2.0)</text>
+    <text x="616" y="634" class="mono">MockJudge (tests)</text>
+    <text x="616" y="658" class="mute">Schema sanitiser strips</text>
+    <text x="616" y="673" class="mute">$schema / additionalProperties /</text>
+    <text x="616" y="688" class="mute">const / pattern before sending.</text>
+    <text x="616" y="710" class="mute">thinkingConfig auto-routed:</text>
+    <text x="616" y="725" class="lbl">3.x → thinkingLevel</text>
+    <text x="616" y="738" class="lbl">2.5 → thinkingBudget</text>
+  </g>
+
+  <!-- Verdict Cache -->
+  <g filter="url(#card-shadow)">
+    <rect x="880" y="570" width="240" height="180" rx="10"
+          fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="896" y="595" class="title">cache/</text>
+    <text x="896" y="616" class="mono">VerdictCache</text>
+    <text x="896" y="640" class="mute">key = sha256(judge_id ‖ prompt)</text>
+    <text x="896" y="658" class="mute">append-only JSONL · in-process</text>
+    <text x="896" y="673" class="mute">mirror</text>
+    <text x="896" y="700" class="lbl">switching judges or rubric</text>
+    <text x="896" y="715" class="lbl">invalidates cleanly — no</text>
+    <text x="896" y="730" class="lbl">cross-contamination</text>
+  </g>
+
+  <!-- ───────────────────────────────────────────────────────────────────
+       RIGHT COLUMN — External Gemini API + Logging
+       ─────────────────────────────────────────────────────────────────── -->
+
+  <g filter="url(#card-shadow)">
+    <rect x="1180" y="135" width="380" height="160" rx="10"
+          fill="#f3f4f6" stroke="#6b7280" stroke-width="1.5"/>
+    <text x="1196" y="160" class="title">Google Gemini API (external)</text>
+    <text x="1196" y="184" class="mono">POST v1beta/models/{model}:generateContent</text>
+    <text x="1196" y="208" class="mute">x-goog-api-key header (never in body)</text>
+    <text x="1196" y="226" class="mute">responseMimeType: application/json</text>
+    <text x="1196" y="244" class="mute">responseSchema enforced (inner verdict)</text>
+    <text x="1196" y="270" class="lbl">Pro free tier ≈ 10 RPM · Flash ≈ 150 RPM</text>
+    <text x="1196" y="285" class="lbl">429 retries with exponential backoff</text>
+  </g>
+
+  <!-- Logging -->
+  <g filter="url(#card-shadow)">
+    <rect x="1180" y="320" width="380" height="120" rx="10"
+          fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="1196" y="345" class="title">logging_setup.py</text>
+    <text x="1196" y="368" class="mono">state/logs/eval-agent-YYYY-MM-DD.log</text>
+    <text x="1196" y="386" class="mute">always-on DEBUG sink · 7-day TTL prune</text>
+    <text x="1196" y="404" class="mute">stderr DEBUG only when EVAL_AGENT_DEBUG=1</text>
+    <text x="1196" y="422" class="mute">redact() helper — secrets never logged</text>
+  </g>
+
+  <!-- Diff + Calibrate + Recover -->
+  <g filter="url(#card-shadow)">
+    <rect x="1180" y="465" width="380" height="285" rx="10"
+          fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="1196" y="490" class="title">Cross-run analysis</text>
+
+    <rect x="1196" y="505" width="160" height="74" rx="6"
+          fill="#ffffff" stroke="#86efac"/>
+    <text x="1206" y="523" class="mono">diff_runs.py</text>
+    <text x="1206" y="540" class="lbl">per-(eval, sub_type)</text>
+    <text x="1206" y="555" class="lbl">precision delta</text>
+    <text x="1206" y="570" class="lbl">exit 1 on regress.</text>
+
+    <rect x="1376" y="505" width="170" height="74" rx="6"
+          fill="#ffffff" stroke="#86efac"/>
+    <text x="1386" y="523" class="mono">calibrate.py</text>
+    <text x="1386" y="540" class="lbl">grid-search threshold</text>
+    <text x="1386" y="555" class="lbl">for target precision</text>
+    <text x="1386" y="570" class="lbl">→ thresholds.yaml</text>
+
+    <rect x="1196" y="595" width="160" height="74" rx="6"
+          fill="#ffffff" stroke="#86efac"/>
+    <text x="1206" y="613" class="mono">recover.py</text>
+    <text x="1206" y="630" class="lbl">rebuild cache from</text>
+    <text x="1206" y="645" class="lbl">state/runs/*/  ·</text>
+    <text x="1206" y="660" class="lbl">idempotent</text>
+
+    <rect x="1376" y="595" width="170" height="74" rx="6"
+          fill="#ffffff" stroke="#86efac"/>
+    <text x="1386" y="613" class="mono">self_verify.py</text>
+    <text x="1386" y="630" class="lbl">5% re-judge sample</text>
+    <text x="1386" y="645" class="lbl">stratified by sub_type</text>
+    <text x="1386" y="660" class="lbl">agreement floor 0.95</text>
+
+    <text x="1196" y="699" class="mute">verify.py — schema + cache integrity gate</text>
+    <text x="1196" y="717" class="mute">feature_list.update_status_from_run()</text>
+    <text x="1196" y="735" class="mute">never drops features; status-mutate only</text>
+  </g>
+
+  <!-- ───────────────────────────────────────────────────────────────────
+       BOTTOM — Per-run outputs + persistent state
+       ─────────────────────────────────────────────────────────────────── -->
+
+  <text x="40" y="790" class="h2">Per-run outputs (immutable after checkpoint)</text>
+
+  <g filter="url(#card-shadow)">
+    <rect x="40" y="805" width="1080" height="135" rx="10"
+          fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="56" y="830" class="title">state/runs/&lt;YYYYMMDDThhmmss&gt;/</text>
+    <g transform="translate(56,850)">
+      <text x="0"   y="0"  class="mono">results.jsonl</text>
+      <text x="0"   y="18" class="lbl">one row per verdict</text>
+      <text x="170" y="0"  class="mono">summary.csv</text>
+      <text x="170" y="18" class="lbl">precision per (evaluator, sub_type)</text>
+      <text x="420" y="0"  class="mono">report.md</text>
+      <text x="420" y="18" class="lbl">headline + sample failures</text>
+      <text x="640" y="0"  class="mono">manifest.json</text>
+      <text x="640" y="18" class="lbl">config + stats + token counts</text>
+      <text x="840" y="0"  class="mono">self_verify.json</text>
+      <text x="840" y="18" class="lbl">5% re-judge agreement audit</text>
+    </g>
+    <g transform="translate(56,900)">
+      <text x="0"   y="0"  class="mono">per_sub_type_thresholds.yaml</text>
+      <text x="0"   y="18" class="lbl">emitted by calibrate · consumed by the pipeline's auto-approve UI</text>
+      <text x="420" y="0"  class="mono">diff_to_&lt;ts&gt;.md</text>
+      <text x="420" y="18" class="lbl">cross-run report (only when diff run)</text>
+    </g>
+  </g>
+
+  <text x="40" y="970" class="h2">Persistent state (long-lived; status-mutated, never dropped)</text>
+
+  <g filter="url(#card-shadow)">
+    <rect x="40" y="985" width="1520" height="135" rx="10"
+          fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="56" y="1010" class="title">state/</text>
+    <g transform="translate(56,1030)">
+      <text x="0" y="0"  class="mono">cache/verdict_cache.jsonl</text>
+      <text x="0" y="18" class="lbl">SHA-256-keyed verdict cache · append-only</text>
+      <text x="0" y="33" class="lbl">cleared only by `rm` · rebuildable via recover</text>
+    </g>
+    <g transform="translate(420,1030)">
+      <text x="0" y="0"  class="mono">feature_list.json</text>
+      <text x="0" y="18" class="lbl">procedural memory: per-feature passes / attempts /</text>
+      <text x="0" y="33" class="lbl">last_run / last_precision; status-mutate only</text>
+    </g>
+    <g transform="translate(800,1030)">
+      <text x="0" y="0"  class="mono">progress.md</text>
+      <text x="0" y="18" class="lbl">episodic memory — append-only narrative log</text>
+      <text x="0" y="33" class="lbl">primes context on session startup</text>
+    </g>
+    <g transform="translate(1180,1030)">
+      <text x="0" y="0"  class="mono">logs/eval-agent-&lt;date&gt;.log</text>
+      <text x="0" y="18" class="lbl">DEBUG file logs · 7-day TTL prune on init</text>
+      <text x="0" y="33" class="lbl">secrets redacted at write time</text>
+    </g>
+  </g>
+
+  <!-- ───────────────────────────────────────────────────────────────────
+       ARROWS
+       ─────────────────────────────────────────────────────────────────── -->
+
+  <!-- Pipeline outputs → Ingest (down-right curve) -->
+  <path d="M 300,195 C 320,195 100,600 60,600" fill="none" stroke="#1d4ed8" stroke-width="1.5"
+        marker-end="url(#arrow-blue)"/>
+  <text x="105" y="455" class="lbl">JSON files</text>
+
+  <!-- Config → CLI (curve) -->
+  <path d="M 300,335 C 330,335 340,200 350,180" fill="none" stroke="#1d4ed8" stroke-width="1.5"
+        marker-end="url(#arrow-blue)"/>
+  <text x="310" y="270" class="lbl">YAML · MD · JSON Schema</text>
+
+  <!-- Env → Judge (curve down-right) -->
+  <path d="M 300,455 C 540,455 540,600 600,610" fill="none" stroke="#1d4ed8" stroke-width="1.5"
+        marker-end="url(#arrow-blue)"/>
+  <text x="350" y="540" class="lbl">api_key (header only)</text>
+
+  <!-- CLI → Session -->
+  <line x1="700" y1="215" x2="700" y2="260" stroke="#1d4ed8" stroke-width="1.5"
+        marker-end="url(#arrow-blue)"/>
+
+  <!-- Session → Ingest -->
+  <path d="M 380,440 C 280,460 200,500 165,570"
+        fill="none" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+
+  <!-- Session → Evaluators -->
+  <path d="M 530,440 L 450,570"
+        fill="none" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+
+  <!-- Session → Judge -->
+  <path d="M 700,440 L 730,570"
+        fill="none" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+
+  <!-- Session → Cache -->
+  <path d="M 900,440 L 1000,570"
+        fill="none" stroke="#1d4ed8" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+
+  <!-- Ingest → Evaluators -->
+  <line x1="300" y1="660" x2="320" y2="660" stroke="#15803d" stroke-width="1.5"
+        marker-end="url(#arrow-green)"/>
+
+  <!-- Evaluators → Judge (candidates) -->
+  <line x1="580" y1="660" x2="600" y2="660" stroke="#15803d" stroke-width="1.5"
+        marker-end="url(#arrow-green)"/>
+  <text x="528" y="652" class="lbl">prompt</text>
+
+  <!-- Judge → Cache (verdict append) -->
+  <line x1="860" y1="660" x2="880" y2="660" stroke="#7c3aed" stroke-width="1.5"
+        marker-end="url(#arrow-purple)"/>
+  <text x="836" y="652" class="lbl">verdict</text>
+
+  <!-- Cache → Judge (cache hit short-circuit) — back arrow -->
+  <path d="M 880,690 C 870,705 850,705 860,690"
+        fill="none" stroke="#7c3aed" stroke-width="1.2" stroke-dasharray="3 3"
+        marker-end="url(#arrow-purple)"/>
+  <text x="848" y="717" class="lbl">cache hit</text>
+
+  <!-- Judge ↔ Gemini API -->
+  <path d="M 860,610 C 1080,610 1100,200 1180,200" fill="none"
+        stroke="#475569" stroke-width="1.5" stroke-dasharray="4 4"
+        marker-end="url(#arrow)"/>
+  <path d="M 1180,250 C 1100,250 1080,640 860,640" fill="none"
+        stroke="#475569" stroke-width="1.5" stroke-dasharray="4 4"
+        marker-end="url(#arrow)"/>
+  <text x="1010" y="270" class="lbl">HTTPS · responseSchema enforced</text>
+
+  <!-- Judge → Logging (debug trace) -->
+  <path d="M 860,630 C 1080,630 1100,400 1180,395" fill="none"
+        stroke="#7c3aed" stroke-width="1.2" stroke-dasharray="3 3"
+        marker-end="url(#arrow-purple)"/>
+
+  <!-- Session → Per-run output -->
+  <path d="M 700,440 C 700,500 600,720 580,805" fill="none"
+        stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="480" y="780" class="lbl">checkpoint() · finalize()</text>
+
+  <!-- Per-run outputs ↔ cross-run analysis (curves to right) -->
+  <path d="M 1120,860 C 1150,860 1170,700 1180,665" fill="none"
+        stroke="#475569" stroke-width="1.2" stroke-dasharray="3 3"
+        marker-end="url(#arrow)"/>
+  <text x="1118" y="780" class="lbl">read</text>
+
+  <!-- Per-run outputs → persistent state (down arrow) -->
+  <line x1="580" y1="940" x2="580" y2="985" stroke="#7c3aed" stroke-width="1.5"
+        marker-end="url(#arrow-purple)"/>
+  <text x="595" y="975" class="lbl">cache append · feature_list update · progress.md tail</text>
+
+  <!-- Footer -->
+  <text x="40" y="1155" class="mute">© 2026 · MHM Pipeline Eval Agent · github.com/alexandergolbergwix/eval-agent · file-coupled to /Documents/Doctorat/pipeline</text>
+</svg>
