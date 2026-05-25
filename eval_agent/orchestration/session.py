@@ -24,6 +24,7 @@ between phases.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -50,7 +51,25 @@ from eval_agent import ui
 log = get_logger("eval_agent.session")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-STATE_DIR = REPO_ROOT / "state"
+
+
+def _resolve_state_dir() -> Path:
+    """STATE_DIR resolution.
+
+    Mirrors ``eval_agent.cli._resolve_state_dir``. Precedence:
+      1. Caller of ``Session(...)`` may inject ``cache_path``,
+         ``runs_dir`` or ``progress_path`` to override per-instance.
+      2. ``EVAL_AGENT_STATE_DIR`` env var (used by the MHM Pipeline
+         bundle to point at a writable per-user dir).
+      3. ``REPO_ROOT / "state"`` — the in-tree default.
+    """
+    env = os.environ.get("EVAL_AGENT_STATE_DIR")
+    if env:
+        return Path(env)
+    return REPO_ROOT / "state"
+
+
+STATE_DIR = _resolve_state_dir()
 RUNS_DIR = STATE_DIR / "runs"
 CACHE_PATH = STATE_DIR / "cache" / "verdict_cache.jsonl"
 PROGRESS_PATH = STATE_DIR / "progress.md"
@@ -265,6 +284,15 @@ class Session:
         else:
             ui.kv("cache", f"{cache_hits} hits / {self.stats.cache_misses} misses")
 
+        # Initial structured stats line for integrators (e.g. MHM Pipeline GUI).
+        ui.emit_stats(
+            candidates_total=self.stats.candidates_total,
+            cache_hits=self.stats.cache_hits,
+            candidates_judged=0,
+            input_tokens=self.stats.input_tokens,
+            output_tokens=self.stats.output_tokens,
+        )
+
         # Judge in parallel; rate-limiter inside the Judge enforces the RPM cap.
         verdicts: list[Verdict] = []
         errors_seen = 0
@@ -282,7 +310,23 @@ class Session:
                 ui.progress_line(i, total,
                                  elapsed=time.time() - t0,
                                  errors=errors_seen)
+                if i % 5 == 0:
+                    ui.emit_stats(
+                        candidates_total=self.stats.candidates_total,
+                        cache_hits=self.stats.cache_hits,
+                        candidates_judged=i,
+                        input_tokens=self.stats.input_tokens,
+                        output_tokens=self.stats.output_tokens,
+                    )
         ui.done_line()
+        # Final structured stats line.
+        ui.emit_stats(
+            candidates_total=self.stats.candidates_total,
+            cache_hits=self.stats.cache_hits,
+            candidates_judged=len(verdicts),
+            input_tokens=self.stats.input_tokens,
+            output_tokens=self.stats.output_tokens,
+        )
 
         elapsed = time.time() - t0
         if errors_seen:

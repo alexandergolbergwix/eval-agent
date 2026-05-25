@@ -14,7 +14,25 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-STATE_DIR = REPO_ROOT / "state"
+
+
+def _resolve_state_dir() -> Path:
+    """STATE_DIR resolution.
+
+    Precedence (highest first):
+      1. ``--state-dir`` CLI flag passed to the ``run`` subcommand (handled at run-time;
+         monkey-patches ``sys.modules[__name__].STATE_DIR`` so all late-bind sites pick it up).
+      2. ``EVAL_AGENT_STATE_DIR`` env var (used by the MHM Pipeline bundle to point at a
+         writable per-user dir).
+      3. ``REPO_ROOT / "state"`` — the in-tree default for ``make run``.
+    """
+    env = os.environ.get("EVAL_AGENT_STATE_DIR")
+    if env:
+        return Path(env)
+    return REPO_ROOT / "state"
+
+
+STATE_DIR = _resolve_state_dir()
 CONFIG_DIR = REPO_ROOT / "config"
 SCHEMAS_DIR = CONFIG_DIR / "schemas"
 
@@ -88,6 +106,18 @@ def _cmd_verify(_args: argparse.Namespace) -> int:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     """Execute one Worker session against a pipeline output directory."""
+    if getattr(args, "state_dir", None) is not None:
+        sys.modules[__name__].STATE_DIR = args.state_dir
+        # Also propagate to the session module so its module-level
+        # STATE_DIR / RUNS_DIR / CACHE_PATH / PROGRESS_PATH constants
+        # (which Session() reads in its constructor) point at the
+        # caller-supplied directory.
+        from eval_agent.orchestration import session as session_mod  # noqa: PLC0415
+        session_mod.STATE_DIR = args.state_dir
+        session_mod.RUNS_DIR = args.state_dir / "runs"
+        session_mod.CACHE_PATH = args.state_dir / "cache" / "verdict_cache.jsonl"
+        session_mod.PROGRESS_PATH = args.state_dir / "progress.md"
+
     from eval_agent.orchestration.session import Session, SessionConfig, _load_defaults  # noqa: PLC0415
     from eval_agent import ui  # noqa: PLC0415
 
@@ -379,6 +409,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                             "cache entry — use when you want to measure judge "
                             "non-determinism on the full corpus, not just the "
                             "5%% self-verify sample.")
+    p_run.add_argument(
+        "--state-dir",
+        type=Path,
+        default=None,
+        help="Override EVAL_AGENT_STATE_DIR / built-in default. Used by "
+             "integrators (e.g. MHM Pipeline bundle) to point at a writable per-user dir.",
+    )
 
     p_report = sub.add_parser("report", help="regenerate report from a run")
     p_report.add_argument("--run", default="latest")

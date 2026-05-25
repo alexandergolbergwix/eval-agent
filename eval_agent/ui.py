@@ -143,8 +143,22 @@ def summary_table(rows: list[tuple[str, object]], *, indent: int = 2) -> None:
         print(" " * indent + _wrap(label.ljust(label_w), _DIM) + "  " + str(value))
 
 
+def emit_stats(*, candidates_total: int, cache_hits: int, candidates_judged: int,
+               input_tokens: int = 0, output_tokens: int = 0) -> None:
+    """Emit a structured stats line on stdout that integrators
+    (e.g. MHM Pipeline's GUI) can parse to update their live
+    progress cards. Format kept simple so a regex parser can split
+    it without ambiguity."""
+    print(
+        f"[STATS] total={candidates_total} hits={cache_hits} "
+        f"judged={candidates_judged} in_tok={input_tokens} out_tok={output_tokens}",
+        flush=True,
+    )
+
+
 __all__ = [
     "header", "section", "kv", "info", "bullet",
     "ok", "warn", "error",
     "progress_line", "done_line", "summary_table",
+    "emit_stats",
 ]
