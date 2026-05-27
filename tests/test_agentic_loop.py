@@ -128,6 +128,29 @@ def test_escalation_happens_at_most_once() -> None:
     assert v.overall == "abstain"
 
 
+def test_bad_escalation_model_falls_back_to_tier() -> None:
+    # tier-1 abstains → escalate to a (bad) model that 404s → the loop must
+    # fall back to the known-good tier model and still produce a verdict,
+    # NOT surface the escalation error onto the candidate.
+    gem = _ScriptedGemini([
+        ToolTurnResponse(function_calls=[], verdict={"overall": "abstain"},
+                         raw_text=None, error=None),   # tier-1 uncertain
+        ToolTurnResponse(function_calls=[], verdict=None, raw_text=None,
+                         error="HTTP 404: models/gemini-3-pro is not found"),
+        ToolTurnResponse(function_calls=[], verdict={"overall": "full"},
+                         raw_text=None, error=None),    # tier model answers
+    ])
+    agent = _agent(gem, escalate_model="gemini-3-pro")
+    v, trace = agent.run(_StubEvaluator(), _candidate())
+    assert v.overall == "full"
+    assert v.error is None
+    # base → escalate(bad) → back to base
+    assert gem.models_used == [
+        "gemini-3.5-flash", "gemini-3-pro", "gemini-3.5-flash",
+    ]
+    assert any("falling back" in (s.note or "") for s in trace.steps)
+
+
 def test_budget_exhaustion_forces_final() -> None:
     # Always asks for a tool → never answers within budget → forced final.
     loop_turns = [

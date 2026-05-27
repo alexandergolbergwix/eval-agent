@@ -99,8 +99,10 @@ class AgenticJudge:
         contents: list[dict[str, Any]] = [
             _user_turn(self._system + "\n\n" + evaluator.build_prompt(candidate))
         ]
-        model = self._judge.id
+        base_model = self._judge.id
+        model = base_model
         escalated = False
+        escalation_failed = False
 
         for _ in range(self._max_steps):
             resp = self._judge.generate_with_tools(
@@ -121,6 +123,20 @@ class AgenticJudge:
                 continue
 
             if resp.error and resp.verdict is None:
+                # A bad / unavailable escalation model (e.g. a 404
+                # "model not found" from a mistyped id) must not fail the
+                # whole candidate: the tier model already answered once, so
+                # fall back to it and retry rather than surfacing the error.
+                if escalated and not escalation_failed and model != base_model:
+                    escalation_failed = True
+                    _emit_step(f"escalate-fallback {base_model}")
+                    trace.add(
+                        tool=None,
+                        note=f"escalate model error ({resp.error}); "
+                             f"falling back to {base_model}",
+                    )
+                    model = base_model
+                    continue
                 trace.add(tool=None, note=f"error: {resp.error}")
                 break  # fall through to forced final
 
