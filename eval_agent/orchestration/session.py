@@ -39,7 +39,11 @@ from eval_agent.cache.verdict_cache import VerdictCache
 from eval_agent.client.gemini_client import GeminiJudge
 from eval_agent.client.judge_interface import Judge
 from eval_agent.client.rate_limiter import RateLimiter
-from eval_agent.evaluators import REGISTRY, build as build_evaluator
+from eval_agent.evaluators import (
+    AUTHORITY_EVALUATORS,
+    REGISTRY,
+    build as build_evaluator,
+)
 from eval_agent.evaluators._base import Candidate, Evaluator, Verdict
 from eval_agent.ingest import marc_extract, ner_results, pipeline_run
 from eval_agent.logging_setup import get_logger
@@ -286,27 +290,47 @@ class Session:
         run = pipeline_run.discover(self.config.pipeline_output)
         marc_records = marc_extract.load(run.marc_extract)
         marc_index = marc_extract.index_by_id(marc_records)
-        ner_records_list = ner_results.load(run.ner_results)
+        ner_records_list = (
+            ner_results.load(run.ner_results) if run.ner_results is not None else []
+        )
+        # Authority evaluators read authority_enriched.json instead of
+        # ner_results.json (the record carries marc_authority_matches).
+        authority_records_list = (
+            ner_results.load(run.authority_results)
+            if run.authority_results is not None
+            else []
+        )
         # Stash indexes so the agentic tools (called inside _judge_one on the
-        # thread pool) can read the full record on demand.
+        # thread pool) can read the full record on demand. Prefer the
+        # authority record (a superset of MARC) when present.
         self._marc_index = marc_index
         self._ner_index = {
-            str(r.get("_control_number", "")): r for r in ner_records_list
+            str(r.get("_control_number", "")): r
+            for r in (ner_records_list + authority_records_list)
             if r.get("_control_number")
         }
 
         ui.section("Ingest")
         ui.kv("MARC records", len(marc_records))
         ui.kv("NER records", len(ner_records_list))
+        if authority_records_list:
+            ui.kv("Authority records", len(authority_records_list))
 
-        # Extract all candidates up-front so we can print a budget preview
+        # Extract all candidates up-front so we can print a budget preview.
+        # Authority evaluators iterate authority_enriched.json; NER
+        # evaluators iterate ner_results.json.
         candidates: list[tuple[Evaluator, Candidate]] = []
         for ev in self._evaluators:
-            for ner_rec in ner_records_list:
-                rid = str(ner_rec.get("_control_number", ""))
+            records = (
+                authority_records_list
+                if ev.id in AUTHORITY_EVALUATORS
+                else ner_records_list
+            )
+            for rec in records:
+                rid = str(rec.get("_control_number", ""))
                 marc_rec = marc_index.get(rid, {})
                 for cand in ev.extract_candidates(
-                    ner_record=ner_rec,
+                    ner_record=rec,
                     marc_record=marc_rec,
                     threshold=self.config.threshold,
                 ):

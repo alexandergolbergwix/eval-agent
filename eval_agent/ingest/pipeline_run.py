@@ -16,21 +16,37 @@ from pathlib import Path
 class PipelineRun:
     root: Path
     marc_extract: Path
-    ner_results: Path
+    ner_results: Path | None
+    authority_results: Path | None = None
 
 
 def discover(root: str | Path) -> PipelineRun:
     """Validate ``root`` is a pipeline output dir; return its key paths.
 
-    Raises ``FileNotFoundError`` if either required file is missing.
+    Requires ``marc_extracted.json`` plus at least one of
+    ``ner_results.json`` (Stage 2) or ``authority_enriched.json``
+    (Stage 3). Raises ``FileNotFoundError`` otherwise.
     """
     root_path = Path(root).expanduser().resolve()
     marc = root_path / "marc_extracted.json"
     ner = root_path / "ner_results.json"
-    missing = [p for p in (marc, ner) if not p.is_file()]
+    authority = root_path / "authority_enriched.json"
+
+    ner_path = ner if ner.is_file() else None
+    authority_path = authority if authority.is_file() else None
+
+    missing: list[str] = []
+    if not marc.is_file():
+        missing.append("marc_extracted.json")
+    if ner_path is None and authority_path is None:
+        missing.append("ner_results.json or authority_enriched.json")
     if missing:
         raise FileNotFoundError(
-            f"pipeline output dir at {root_path} is missing: "
-            f"{', '.join(str(p.name) for p in missing)}"
+            f"pipeline output dir at {root_path} is missing: {', '.join(missing)}"
         )
-    return PipelineRun(root=root_path, marc_extract=marc, ner_results=ner)
+    return PipelineRun(
+        root=root_path,
+        marc_extract=marc,
+        ner_results=ner_path,
+        authority_results=authority_path,
+    )

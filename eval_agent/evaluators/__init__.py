@@ -5,6 +5,7 @@ a new evaluator is one line here + one module under this directory.
 """
 
 from eval_agent.evaluators._base import Candidate, Evaluator, Verdict
+from eval_agent.evaluators.authority import AuthorityEvaluator
 from eval_agent.evaluators.contents_ner import ContentsNERevaluator
 from eval_agent.evaluators.genre_classifier import GenreClassifierEvaluator
 from eval_agent.evaluators.person_ner import PersonNERevaluator
@@ -21,7 +22,13 @@ REGISTRY: dict[str, type[Evaluator]] = {
     "provenance_ner": ProvenanceNERevaluator,
     "contents_ner": ContentsNERevaluator,
     "genre_classifier": GenreClassifierEvaluator,
+    # Stage-3 authority resolution (Mazal / VIAF / Wikidata / KIMA).
+    # Reads authority_enriched.json, not ner_results.json.
+    "authority": AuthorityEvaluator,
 }
+
+# Evaluators that read authority_enriched.json instead of ner_results.json.
+AUTHORITY_EVALUATORS: frozenset[str] = frozenset({"authority"})
 
 
 def build(evaluator_id: str) -> Evaluator:
