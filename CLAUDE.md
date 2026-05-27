@@ -118,6 +118,17 @@ state/cache/
 
 ## Pluggable evaluator interface
 
+**Registered evaluators** (`eval_agent/evaluators/__init__.py:REGISTRY`):
+`person_ner`, `provenance_ner`, `contents_ner`, `genre_classifier` (the
+Stage-2 extraction models), plus **`authority`** — the Stage-3 evaluator
+(`eval_agent/evaluators/authority.py`) that judges each Mazal / VIAF /
+Wikidata / KIMA match the pipeline assigned to a name. The authority
+evaluator reads `marc_authority_matches` off the record and is the only
+evaluator that consumes `authority_enriched.json` rather than
+`ner_results.json`. Accordingly, `ingest.pipeline_run.discover(root)`
+now accepts **`authority_enriched.json`** as an alternative to
+`ner_results.json` when locating a pipeline run on disk.
+
 Every model evaluation lives in `eval_agent/evaluators/<name>.py` and
 implements:
 
