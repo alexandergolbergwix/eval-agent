@@ -27,6 +27,17 @@ log = get_logger("eval_agent.agentic")
 
 TokenSink = Callable[[int, int], None]
 
+
+def _emit_step(detail: str) -> None:
+    """Print a ``[STEP]`` activity line for live integrators.
+
+    The MHM Pipeline worker forwards ``[STEP] …`` stdout lines to the
+    AI-verification dialog's animated agent diagram. Tool calls and
+    escalations surface here as ``tool <name>`` / ``escalate <model>``
+    so the diagram can light the corresponding node live.
+    """
+    print(f"[STEP] {detail}", flush=True)
+
 _ESCALATE_NUDGE = (
     "Your verdict was uncertain. If more evidence would help, call a tool to "
     "gather it; otherwise give a firmer verdict now. Return only the JSON verdict."
@@ -101,6 +112,9 @@ class AgenticJudge:
             if resp.function_calls:
                 contents.append(_model_function_call_turn(resp.function_calls))
                 for call in resp.function_calls:
+                    # Emit a live activity line so integrators (the MHM
+                    # Pipeline's agent-flow diagram) can animate tool calls.
+                    _emit_step(f"tool {call.name}")
                     obs = self._registry.dispatch(call.name, call.args, ctx)
                     trace.add(tool=call.name, args=call.args, observation=obs)
                     contents.append(_function_response_turn(call.name, obs))
@@ -119,6 +133,7 @@ class AgenticJudge:
             ):
                 escalated = True
                 model = self._escalate_model
+                _emit_step(f"escalate {model}")
                 contents.append(_model_text_turn(json.dumps(verdict_dict, ensure_ascii=False)))
                 contents.append(_user_turn(_ESCALATE_NUDGE))
                 trace.add(tool=None, note=f"escalate -> {model}")

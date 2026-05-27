@@ -114,8 +114,11 @@ flowchart TB
         extract --> prompt[build_prompt<br/>rubric + MARC + prediction]
         prompt --> cache_check{cache hit?}
         cache_check -->|yes| parsed
-        cache_check -->|no| judge[Judge.judge<br/>via RateLimiter]
-        judge --> structured[(Gemini<br/>responseSchema<br/>enforced)]:::ext
+        cache_check -->|no| tier1[tier-1 judge<br/>fast model<br/>single shot]
+        tier1 --> gate{abstain /<br/>partial?}
+        gate -->|no| structured[(Gemini<br/>verdict)]:::ext
+        gate -->|yes| loop[agentic tool-loop<br/>see section 10]
+        loop --> structured
         structured --> cache_write[cache.append<br/>verdict_cache.jsonl]
         cache_write --> parsed[parse_verdict<br/>typed Verdict]
         parsed --> agg[accumulate<br/>per evaluator]
@@ -481,7 +484,66 @@ Migration runbook (see `config/schemas/README.md`):
 
 ---
 
-## 10 · Reading order for a code-walkthrough
+## 10 · Agentic judging (the tool-loop)
+
+The judge is **agentic by default** (gated). Tier-1 judges every
+candidate in a single shot; only `abstain` / `partial` verdicts enter
+the ReAct tool-loop, where the model chooses which evidence to gather
+(`fetch_marc_field`, `expand_note`, `list_record_entities`,
+`lookup_authority`) and escalates to a stronger model once if it stays
+uncertain. `--linear` disables the loop (reproducible / citable path);
+`--agentic-all` routes every candidate through it.
+
+Each tool dispatch and escalation prints a `[STEP] tool <name>` /
+`[STEP] escalate <model>` line; the MHM Pipeline's live agent-flow
+diagram animates those nodes in real time.
+
+```mermaid
+flowchart TB
+    cand[Candidate] --> tier1[Tier-1 judge<br/>fast model<br/>single shot]
+    tier1 --> gate{overall ∈<br/>abstain / partial?}
+    gate -->|no| verdict[(Verdict)]:::out
+
+    subgraph loop[" ReAct tool-loop  (gated; budget = max_steps) "]
+        direction TB
+        model[Model turn<br/>generate_with_tools] --> choose{wants a tool?}
+        choose -->|functionCall| tools[Tools<br/>fetch_marc_field · expand_note<br/>list_record_entities · lookup_authority]
+        tools -->|observation| model
+        choose -->|answer + still unsure| esc[Escalate once<br/>stronger model]
+        esc --> model
+        choose -->|answer confident| done[verdict]
+    end
+
+    gate -->|yes| model
+    done --> verdict
+    loop -. budget exhausted .-> forced[forced final<br/>no tools] --> verdict
+
+    authority[(VIAF / Wikidata<br/>authority_client)]:::ext
+    tools -. lookup_authority .-> authority
+    marc[(marc_extracted.json<br/>full record on disk)]:::ext
+    tools -. fetch / expand / list .-> marc
+
+    classDef out fill:#e6ffe6,stroke:#009900,color:#000
+    classDef ext fill:#f5f5dc,stroke:#8b7700,color:#000
+    style loop fill:#f4e6ff,stroke:#7700cc,color:#000
+```
+
+**Invariants:**
+
+- The tool-loop runs inside the eval-agent's own process; tools read
+  the pipeline's on-disk JSON or make the eval-agent's OWN network
+  calls (VIAF / Wikidata). The file-coupling boundary (section 7) is
+  unchanged — no Python imports across.
+- Every loop step is recorded to `state/runs/<ts>/traces/<evaluator>.jsonl`
+  for audit (the agency is fully traceable).
+- The verdict cache key is mode-tagged (`<model>::<mode>`) so agentic
+  and linear verdicts never collide. `self_verify` gates on linear
+  verdicts only — agentic verdicts re-gather evidence on re-run and
+  legitimately diverge, so they are reported separately, non-gating.
+
+---
+
+## 11 · Reading order for a code-walkthrough
 
 If you're reading the code for the first time (e.g. in an interview):
 
