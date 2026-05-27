@@ -344,9 +344,11 @@ classDiagram
     }
 
     class AuthorityEvaluator {
-        <<future>>
         +id = "authority"
-        +sub_types = mazal, viaf, kima, wikidata
+        +sub_types = person, organization, place, work
+        +reads authority_enriched.json
+        +candidates = resolved MARC matches + enriched NER entities + KIMA places
+        +threshold NOT applied (judges medium/low too)
     }
 
     Evaluator <|-- PersonNERevaluator

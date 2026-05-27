@@ -31,6 +31,74 @@ def get_matches(record: dict[str, Any]) -> list[dict[str, Any]]:
     return list(record.get("marc_authority_matches") or [])
 
 
+def has_authority_id(match: dict[str, Any]) -> bool:
+    """True when the match resolved to any authority identifier.
+
+    A match with no Mazal / VIAF / Wikidata id is an *unmatched* row —
+    there is no authority record to verify, so the evaluator skips it.
+    """
+    return bool(
+        match.get("mazal_id")
+        or match.get("viaf_uri")
+        or match.get("wikidata_qid")
+    )
+
+
+def get_enriched_entities(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return NER ``entities`` that were enriched with an authority id.
+
+    Stage 3 attaches ``mazal_id`` / ``viaf_uri`` / ``wikidata_qid`` onto
+    the NER entity dict when a name resolves. These are authority
+    decisions the curator reviews in the editor's NER-entity rows, so the
+    evaluator judges them too. Entity dicts use ``person`` (or ``text``)
+    for the surface form rather than ``name``; normalise to the
+    match-shape the evaluator's prompt builder expects.
+    """
+    out: list[dict[str, Any]] = []
+    for ent in record.get("entities") or []:
+        if not has_authority_id(ent):
+            continue
+        name = str(ent.get("person") or ent.get("text") or ent.get("name") or "")
+        out.append(
+            {
+                "name": name,
+                "role": str(ent.get("role") or ""),
+                "field": str(ent.get("grounded_field") or ent.get("source") or ""),
+                "matched_name": str(ent.get("preferred_name_lat") or name),
+                "mazal_id": ent.get("mazal_id") or "",
+                "viaf_uri": ent.get("viaf_uri") or "",
+                "wikidata_qid": ent.get("wikidata_qid") or "",
+                "confidence": ent.get("model_confidence", ent.get("confidence")),
+                "_origin": "entity",
+                "_entity_kind": str(ent.get("type") or ""),
+            }
+        )
+    return out
+
+
+def places_as_matches(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return ``kima_places`` as match-shaped dicts for evaluation."""
+    out: list[dict[str, Any]] = []
+    for name, uri in get_places(record).items():
+        qid = ""
+        if isinstance(uri, str) and "/entity/" in uri:
+            qid = uri.rsplit("/entity/", 1)[-1].strip("/")
+        out.append(
+            {
+                "name": str(name),
+                "role": "place",
+                "field": "651",
+                "matched_name": str(name),
+                "wikidata_qid": qid,
+                "source": "kima",
+                "confidence": "high",
+                "_origin": "kima",
+                "match_type": "place",
+            }
+        )
+    return out
+
+
 def get_confidence(match: dict[str, Any]) -> float:
     """Coerce a match's confidence to a 0..1 float.
 

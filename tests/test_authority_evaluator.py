@@ -71,26 +71,53 @@ class TestIngest:
 
 
 class TestExtractCandidates:
-    def test_extracts_above_threshold(self) -> None:
+    def test_judges_all_resolved_matches_regardless_of_threshold(self) -> None:
+        # Authority verification reviews every resolved authority decision
+        # — the threshold does NOT gate (the uncertain medium/low matches
+        # are exactly what a curator wants a second opinion on). The
+        # fixture has 2 resolved MARC matches (person + place) + 1 KIMA
+        # place = 3 candidates, even at a high threshold.
         ev = AuthorityEvaluator()
         cands = list(ev.extract_candidates(
-            ner_record=_authority_record(), marc_record={}, threshold=0.5,
+            ner_record=_authority_record(), marc_record={}, threshold=0.9,
         ))
-        # high-confidence person passes 0.5; low-confidence place (0.3) filtered out
-        assert len(cands) == 1
-        c = cands[0]
-        assert c.evaluator_id == "authority"
-        assert c.sub_type == "person"
-        assert c.record_id == "990001"
-        assert c.payload["mazal_id"] == "987007"
+        assert len(cands) == 3
+        assert {c.sub_type for c in cands} == {"person", "place"}
+        person = next(c for c in cands if c.sub_type == "person")
+        assert person.evaluator_id == "authority"
+        assert person.record_id == "990001"
+        assert person.payload["mazal_id"] == "987007"
 
-    def test_low_threshold_includes_place(self) -> None:
+    def test_skips_unmatched_rows(self) -> None:
+        rec = {
+            "_control_number": "990002",
+            "marc_authority_matches": [
+                {"name": "פלוני", "role": "author", "field": "100",
+                 "confidence": "low", "matched": 0},  # no id → skipped
+            ],
+        }
         ev = AuthorityEvaluator()
         cands = list(ev.extract_candidates(
-            ner_record=_authority_record(), marc_record={}, threshold=0.2,
+            ner_record=rec, marc_record={}, threshold=0.0,
         ))
-        sub_types = {c.sub_type for c in cands}
-        assert sub_types == {"person", "place"}
+        assert cands == []
+
+    def test_includes_enriched_ner_entities(self) -> None:
+        rec = {
+            "_control_number": "990003",
+            "entities": [
+                {"person": "משה", "role": "TRANSLATOR", "source": "person_ner",
+                 "wikidata_qid": "Q9077", "model_confidence": 0.83},
+                {"person": "unmatched", "role": "AUTHOR", "source": "person_ner"},
+            ],
+        }
+        ev = AuthorityEvaluator()
+        cands = list(ev.extract_candidates(
+            ner_record=rec, marc_record={}, threshold=0.9,
+        ))
+        assert len(cands) == 1
+        assert cands[0].payload["name"] == "משה"
+        assert cands[0].payload["wikidata_qid"] == "Q9077"
 
     def test_build_prompt_mentions_authority_ids(self) -> None:
         ev = AuthorityEvaluator()

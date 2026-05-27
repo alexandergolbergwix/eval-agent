@@ -122,12 +122,30 @@ state/cache/
 `person_ner`, `provenance_ner`, `contents_ner`, `genre_classifier` (the
 Stage-2 extraction models), plus **`authority`** — the Stage-3 evaluator
 (`eval_agent/evaluators/authority.py`) that judges each Mazal / VIAF /
-Wikidata / KIMA match the pipeline assigned to a name. The authority
-evaluator reads `marc_authority_matches` off the record and is the only
+Wikidata / KIMA match the pipeline assigned to a name. It is the only
 evaluator that consumes `authority_enriched.json` rather than
 `ner_results.json`. Accordingly, `ingest.pipeline_run.discover(root)`
 now accepts **`authority_enriched.json`** as an alternative to
 `ner_results.json` when locating a pipeline run on disk.
+
+**Candidate set (mirrors the curator's Authority editor).** The
+authority evaluator judges every *resolved* authority decision across
+all three shapes the editor surfaces — not just `marc_authority_matches`:
+
+1. `marc_authority_matches[*]` that resolved to an id (Mazal/VIAF/Wikidata),
+2. enriched NER `entities[*]` carrying an authority id
+   (`authority_results.get_enriched_entities` normalises the `person`/`text`
+   surface form to the match shape), and
+3. `kima_places` (`authority_results.places_as_matches`, sub_type `place`).
+
+**The confidence threshold does NOT gate authority candidates.** For the
+NER evaluators the threshold keeps cost down by judging only high-confidence
+predictions, but authority verification exists to give a second opinion on
+the *uncertain* (medium/low) matches — gating to high-only would defeat the
+purpose. The only row class skipped is *unmatched* (no authority id —
+nothing to verify). On the 68-record `testing test` corpus this took the
+candidate count from 18 (high-confidence MARC only) to 288 (195 MARC + 41
+enriched entities + 52 KIMA), matching the editor's resolved-match count.
 
 Every model evaluation lives in `eval_agent/evaluators/<name>.py` and
 implements:

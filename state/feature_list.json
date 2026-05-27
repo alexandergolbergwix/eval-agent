@@ -22,8 +22,8 @@
       "threshold": 0.85,
       "status": {
         "passes": false,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
+        "attempts": 5,
+        "last_run": "20260523T112530533425Z",
         "last_precision": 0.25,
         "notes": ""
       }
@@ -35,9 +35,9 @@
       "threshold": 0.85,
       "status": {
         "passes": false,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
-        "last_precision": 0.25,
+        "attempts": 5,
+        "last_run": "20260523T112530533425Z",
+        "last_precision": 0.5,
         "notes": ""
       }
     },
@@ -48,8 +48,8 @@
       "threshold": 0.85,
       "status": {
         "passes": false,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
+        "attempts": 5,
+        "last_run": "20260523T112530533425Z",
         "last_precision": 0.0,
         "notes": ""
       }
@@ -61,8 +61,8 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
+        "attempts": 5,
+        "last_run": "20260523T112530533425Z",
         "last_precision": 1.0,
         "notes": ""
       }
@@ -100,8 +100,8 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 5,
-        "last_run": "20260523T100216837564Z",
+        "attempts": 6,
+        "last_run": "20260523T112530533425Z",
         "last_precision": 1.0,
         "notes": ""
       }
@@ -113,8 +113,8 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 5,
-        "last_run": "20260523T100216837564Z",
+        "attempts": 6,
+        "last_run": "20260523T112530533425Z",
         "last_precision": 1.0,
         "notes": ""
       }
@@ -126,8 +126,8 @@
       "threshold": 0.85,
       "status": {
         "passes": false,
-        "attempts": 5,
-        "last_run": "20260523T100216837564Z",
+        "attempts": 6,
+        "last_run": "20260523T112530533425Z",
         "last_precision": 0.0,
         "notes": ""
       }
@@ -139,9 +139,9 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 5,
-        "last_run": "20260523T100216837564Z",
-        "last_precision": 0.875,
+        "attempts": 6,
+        "last_run": "20260523T112530533425Z",
+        "last_precision": 0.8484848484848485,
         "notes": ""
       }
     },
@@ -152,9 +152,9 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 5,
-        "last_run": "20260523T100216837564Z",
-        "last_precision": 1.0,
+        "attempts": 6,
+        "last_run": "20260523T112530533425Z",
+        "last_precision": 0.9777777777777777,
         "notes": ""
       }
     },
@@ -165,9 +165,9 @@
       "threshold": 0.85,
       "status": {
         "passes": false,
-        "attempts": 5,
-        "last_run": "20260523T100216837564Z",
-        "last_precision": 0.0,
+        "attempts": 6,
+        "last_run": "20260523T112530533425Z",
+        "last_precision": 0.5,
         "notes": ""
       }
     },
@@ -204,8 +204,8 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 5,
-        "last_run": "20260523T100216837564Z",
+        "attempts": 6,
+        "last_run": "20260523T112530533425Z",
         "last_precision": 1.0,
         "notes": ""
       }
@@ -217,8 +217,8 @@
       "threshold": 0.85,
       "status": {
         "passes": false,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
+        "attempts": 5,
+        "last_run": "20260523T112530533425Z",
         "last_precision": 0.0,
         "notes": ""
       }
@@ -230,8 +230,8 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 5,
-        "last_run": "20260523T100216837564Z",
+        "attempts": 6,
+        "last_run": "20260523T112530533425Z",
         "last_precision": 1.0,
         "notes": ""
       }
@@ -243,8 +243,8 @@
       "threshold": 0.85,
       "status": {
         "passes": true,
-        "attempts": 5,
-        "last_run": "20260523T100216837564Z",
+        "attempts": 6,
+        "last_run": "20260523T112530533425Z",
         "last_precision": 1.0,
         "notes": ""
       }
@@ -255,10 +255,10 @@
       "sub_type": "Records (Documents)",
       "threshold": 0.85,
       "status": {
-        "passes": true,
-        "attempts": 4,
-        "last_run": "20260522T154241686333Z",
-        "last_precision": 1.0,
+        "passes": false,
+        "attempts": 5,
+        "last_run": "20260523T112530533425Z",
+        "last_precision": 0.0,
         "notes": ""
       }
     },

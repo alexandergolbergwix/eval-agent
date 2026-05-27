@@ -34,12 +34,29 @@ class AuthorityEvaluator(Evaluator):
         # ``ner_record`` is the authority-enriched record (carries
         # marc_authority_matches). ``marc_record`` is the Stage-1 MARC
         # slice for prompt context (falls back to the same record).
+        #
+        # The candidate set mirrors the curator's Authority editor: every
+        # authority decision the pipeline made across all three shapes —
+        # MARC-field matches, enriched NER entities, and KIMA places. The
+        # ``threshold`` does NOT gate authority candidates: the whole point
+        # of AI verification is to review the *uncertain* (medium/low)
+        # matches, so gating to high-confidence only would defeat it. We
+        # skip exactly one class: rows that never resolved to an authority
+        # id (nothing to verify).
         rid = str(ner_record.get("_control_number", ""))
         ctx = marc_extract.project(marc_record or ner_record, self.marc_field_keys)
-        for idx, match in enumerate(authority_results.get_matches(ner_record)):
+
+        matches: list[dict[str, Any]] = []
+        matches.extend(
+            m
+            for m in authority_results.get_matches(ner_record)
+            if authority_results.has_authority_id(m)
+        )
+        matches.extend(authority_results.get_enriched_entities(ner_record))
+        matches.extend(authority_results.places_as_matches(ner_record))
+
+        for idx, match in enumerate(matches):
             conf = authority_results.get_confidence(match)
-            if conf < threshold:
-                continue
             sub_type = _classify(match)
             payload = dict(match)
             payload["_match_index"] = idx

@@ -60,3 +60,12 @@ context that does not fit in the model's context window.
 - Candidates: 143 (hits 0 / misses 143)
 - Verdicts: full 90 / partial 15 / fail 38 / error 0
 - Artefacts: state/runs/20260523T100216837564Z/
+
+## 20260523T112530533425Z
+
+- Judge: `gemini-3.5-flash` @ 60 RPM, 4 parallel
+- Pipeline output: `/Users/alexandergo/Documents/Doctorat/pipeline/eval/work`
+- Evaluators: person_ner, provenance_ner, contents_ner, genre_classifier
+- Candidates: 112 (hits 93 / misses 19)
+- Verdicts: full 93 / partial 13 / fail 6 / error 0
+- Artefacts: state/runs/20260523T112530533425Z/
