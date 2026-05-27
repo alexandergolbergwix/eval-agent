@@ -167,6 +167,61 @@ introspectable + testable.
 
 ---
 
+## Agentic judging (the tool-loop)
+
+The judge used to be a single-shot LLM-as-judge workflow: one Gemini
+call per candidate against a fixed `responseSchema`. It is now
+**agentic by default** — a ReAct tool-loop where the model directs its
+own evidence-gathering before committing a verdict.
+
+**Modes** (`--linear` / `--agentic-all` flags; default = gated):
+
+- `gated` (default) — tier-1 single-shot on every candidate; the
+  tool-loop fires only when tier-1 returns `abstain` / `partial`.
+  Keeps cost + determinism for the easy majority.
+- `agentic_all` — every candidate runs the loop.
+- `linear` — the original single-shot path. Reproducible / citable;
+  `--linear` must reproduce pre-agentic numbers (guarded by
+  `tests/test_agentic_parity.py`).
+
+**The loop** (`eval_agent/agentic/loop.py`, `AgenticJudge.run`): builds
+the agent system prompt (`config/rubrics/agentic_system.md`) + the
+evaluator's per-candidate prompt, then calls
+`GeminiJudge.generate_with_tools` (function-calling) in a budgeted loop
+(`max_steps`, default 6). The model chooses which tools to call — it is
+never forced. On an uncertain verdict it escalates the model once
+(tier_model `gemini-3.5-flash` → escalate_model `gemini-3.1-pro-preview`,
+both config-driven). Every step is recorded in a `Trace` written to
+`<run_dir>/traces/<evaluator_id>.jsonl`.
+
+**Agent tools** (`eval_agent/agentic/tools.py`, model-chosen):
+
+- `fetch_marc_field(field)` — read any field from the full MARC record
+  on disk (the per-evaluator projection drops most fields).
+- `expand_note()` — full untruncated notes + colophon.
+- `list_record_entities()` — all NER predictions on the record (joint
+  reasoning).
+- `lookup_authority(name, kind)` — VIAF + Wikidata existence check
+  (`eval_agent/client/authority_client.py`; the only networked tool;
+  never raises; honours `EVAL_AGENT_NO_NETWORK`).
+
+**Invariants preserved:** the Rule-48 trust boundary is intact — tools
+read pipeline JSON on disk or make the eval-agent's OWN network calls;
+zero Python imports across to the pipeline. The verdict cache key is
+mode-tagged (`<model>::<mode>`) so agentic + linear verdicts never
+collide. `self_verify`'s agreement gate samples LINEAR verdicts only
+(agentic verdicts re-gather evidence on re-run and legitimately
+diverge); their count is reported in `self_verify.json` as
+`agentic_excluded`, non-gating.
+
+**Model-id caveat:** `gemini-3.5-flash` / `gemini-3.1-pro-preview` must
+resolve on the live API; they live in `config/default.yaml`. Fall back
+to `gemini-2.5-flash` / `gemini-2.5-pro` if rejected. The
+function-response turn role in `loop.py:_function_response_turn` is set
+to `"user"` per v1beta — verify in the live smoke if tool turns error.
+
+---
+
 ## What to do when things go wrong
 
 | Symptom | Recover-mode action |

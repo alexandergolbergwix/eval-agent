@@ -86,6 +86,11 @@ class Verdict:
     judge_id: str = ""
     cache_key: str = ""
     judged_at: str = ""
+    # True when produced by the agentic tool-loop (vs the linear single-shot).
+    # Lives outside the schema-constrained ``verdict`` sub-object so the
+    # verdict schema is unaffected; self-verify uses it to keep its gate on
+    # the deterministic (linear) verdicts only.
+    agentic: bool = False
 
     def to_jsonl_record(self) -> dict[str, Any]:
         return {
@@ -103,6 +108,7 @@ class Verdict:
                 "overall": self.overall,
                 "reasoning": self.reasoning,
             },
+            "agentic": self.agentic,
             "cache_key": self.cache_key,
             "judged_at": self.judged_at or datetime.now(timezone.utc).isoformat(),
             "error": self.error,

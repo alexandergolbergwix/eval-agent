@@ -41,9 +41,31 @@ threshold:
     marc500_colophon: 0.85       # raise above the per-fold 0.45 to reduce false-positive rate
     genre_classifier: 0.85       # raise above 0.65 default
 
+# ── Agentic judging ───────────────────────────────────────────────────
+# The judge directs its own process: a ReAct tool-loop where the model
+# chooses which evidence to gather before committing a verdict, escalating
+# to a stronger model once when it stays uncertain.
+agentic:
+  enabled: true                  # default ON; --linear disables (citable path)
+  mode: gated                    # gated | all  (--agentic-all sets "all")
+  escalate_on: [abstain, partial]  # tier-1 overalls that trigger the tool-loop
+  max_steps: 6                   # ReAct budget per candidate
+  tier_model: gemini-3.5-flash   # cheap tier-1 pass (must resolve on the live API)
+  escalate_model: gemini-3.1-pro-preview  # loop escalates here when uncertain
+  tools: [fetch_marc_field, expand_note, list_record_entities, lookup_authority]
+  trace_dir: traces             # written under each run dir
+  authority:
+    viaf: true
+    wikidata: true
+    rpm: 60                      # authority-client rate cap (separate from judge)
+
 self_verify:
   sample_rate: 0.05              # 5% of verdicts re-judged at the end of each run
   agreement_floor: 0.95          # below this, the run is flagged as a self-verify regression
+  # Agentic verdicts legitimately diverge on re-run (the loop re-gathers
+  # evidence), so the gate samples LINEAR/tier-1 verdicts only; agentic
+  # agreement is reported separately and never fails the run.
+  linear_only_gate: true
 
 passes_floor:
   default: 0.80                  # precision floor for a feature to be considered passing

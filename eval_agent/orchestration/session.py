@@ -93,12 +93,27 @@ class SessionConfig:
     api_key: str
     dry_run: bool = False
     no_cache: bool = False  # skip cache reads (still appends new verdicts)
+    # ── Agentic mode (Rule 52 follow-on) ──────────────────────────────
+    # mode ∈ {"gated", "agentic_all", "linear"}.
+    #   gated       — default: tier-1 single-shot, escalate only hard cases.
+    #   agentic_all — every candidate runs the tool-loop.
+    #   linear      — old single-shot path (reproducible / citable).
+    mode: str = "gated"
+    escalate_on: tuple[str, ...] = ("abstain", "partial")
+    max_steps: int = 6
+    tier_model: str = "gemini-3.5-flash"
+    escalate_model: str = "gemini-3.1-pro-preview"
+    tools: tuple[str, ...] = (
+        "fetch_marc_field", "expand_note", "list_record_entities", "lookup_authority",
+    )
+    authority_rpm: int = 60
 
     @classmethod
     def from_args(cls, args: Any, defaults: dict[str, Any]) -> "SessionConfig":
         judge_cfg = defaults.get("judge", {})
         rl_cfg = defaults.get("rate_limit", {})
         thr_cfg = defaults.get("threshold", {})
+        ag_cfg = defaults.get("agentic", {})
 
         evals_arg = args.evaluators or "all"
         if evals_arg == "all":
@@ -111,7 +126,22 @@ class SessionConfig:
                         f"unknown evaluator {e!r}; known: {sorted(REGISTRY)}"
                     )
 
-        judge_model = args.judge or judge_cfg.get("id", "gemini-3.5-flash")
+        # Resolve agentic mode from flags (default = gated agentic).
+        tier_model = (
+            getattr(args, "tier_model", None)
+            or ag_cfg.get("tier_model")
+            or judge_cfg.get("id", "gemini-3.5-flash")
+        )
+        if getattr(args, "linear", False):
+            mode = "linear"
+        elif getattr(args, "agentic_all", False):
+            mode = "agentic_all"
+        else:
+            mode = ag_cfg.get("mode", "agentic") if ag_cfg.get("enabled", True) else "linear"
+
+        # In linear mode the judge model IS the tier model; in agentic modes
+        # tier-1 runs on tier_model and the loop escalates to escalate_model.
+        judge_model = args.judge or tier_model
 
         # Pro-safety: free-tier RPM on Pro variants is roughly 10× tighter than
         # Flash. When the user picks a Pro model without overriding --rpm /
@@ -129,6 +159,8 @@ class SessionConfig:
             if parallel is None:
                 parallel = pro_parallel
 
+        escalate_on = tuple(ag_cfg.get("escalate_on", ["abstain", "partial"]))
+        auth_cfg = ag_cfg.get("authority", {})
         return cls(
             pipeline_output=Path(args.pipeline_output).expanduser().resolve(),
             threshold=float(args.threshold or thr_cfg.get("default", 0.85)),
@@ -139,6 +171,16 @@ class SessionConfig:
             api_key=args.api_key or "",
             dry_run=bool(args.dry_run),
             no_cache=bool(getattr(args, "no_cache", False)),
+            mode=mode,
+            escalate_on=escalate_on,
+            max_steps=int(getattr(args, "agentic_max_steps", None) or ag_cfg.get("max_steps", 6)),
+            tier_model=tier_model,
+            escalate_model=(
+                getattr(args, "escalate_model", None)
+                or ag_cfg.get("escalate_model", "gemini-3.1-pro-preview")
+            ),
+            tools=tuple(ag_cfg.get("tools", list(cls.tools))),
+            authority_rpm=int(auth_cfg.get("rpm", 60)),
         )
 
 
@@ -213,6 +255,12 @@ class Session:
         self._schema = _load_schema()
         self._judge: Judge | None = judge  # built lazily in execute() if None
 
+        # Agentic loop + per-candidate indexes, built in execute() once the
+        # pipeline JSON is loaded. None in linear mode or until execute runs.
+        self._agent: Any | None = None
+        self._marc_index: dict[str, dict[str, Any]] = {}
+        self._ner_index: dict[str, dict[str, Any]] = {}
+
         self._evaluators: list[Evaluator] = [
             build_evaluator(e) for e in config.evaluators
         ]
@@ -239,6 +287,13 @@ class Session:
         marc_records = marc_extract.load(run.marc_extract)
         marc_index = marc_extract.index_by_id(marc_records)
         ner_records_list = ner_results.load(run.ner_results)
+        # Stash indexes so the agentic tools (called inside _judge_one on the
+        # thread pool) can read the full record on demand.
+        self._marc_index = marc_index
+        self._ner_index = {
+            str(r.get("_control_number", "")): r for r in ner_records_list
+            if r.get("_control_number")
+        }
 
         ui.section("Ingest")
         ui.kv("MARC records", len(marc_records))
@@ -267,12 +322,18 @@ class Session:
 
         if self._judge is None:
             self._judge = _build_judge(self.config)
+        if self.config.mode != "linear" and self._agent is None:
+            self._agent = _build_agent(self.config, self._judge, self._marc_index, self._ner_index)
+        ui.kv("mode", self.config.mode)
+        if self.config.mode != "linear":
+            ui.kv("escalate_model", self.config.escalate_model)
+        cache_judge_id = self._cache_judge_id()
         if self.config.no_cache:
             cache_hits = 0
         else:
             cache_hits = sum(
                 1 for ev, c in candidates
-                if self._cache.get(judge_id=self._judge.id, prompt=ev.build_prompt(c))
+                if self._cache.get(judge_id=cache_judge_id, prompt=ev.build_prompt(c))
                 is not None
             )
         self.stats.cache_hits = cache_hits
@@ -408,34 +469,89 @@ class Session:
 
     # ── Internals ─────────────────────────────────────────────────────
 
+    def _cache_judge_id(self) -> str:
+        """Mode-tagged judge id so agentic + linear verdicts never collide."""
+        assert self._judge is not None
+        return f"{self._judge.id}::{self.config.mode}"
+
     def _judge_one(self, evaluator: Evaluator, candidate: Candidate) -> Verdict:
         assert self._judge is not None
         prompt = evaluator.build_prompt(candidate)
-        key = VerdictCache.key(judge_id=self._judge.id, prompt=prompt)
+        cache_id = self._cache_judge_id()
+        key = VerdictCache.key(judge_id=cache_id, prompt=prompt)
 
         if not self.config.no_cache:
-            cached = self._cache.get(judge_id=self._judge.id, prompt=prompt)
+            cached = self._cache.get(judge_id=cache_id, prompt=prompt)
             if cached is not None:
                 v = evaluator.parse_verdict(cached, candidate)
                 v.judge_id = self._judge.id
                 v.cache_key = key
                 return v
 
+        if self.config.mode == "linear":
+            return self._judge_linear(evaluator, candidate, prompt, cache_id, key)
+        if self.config.mode == "agentic_all":
+            return self._judge_agentic(evaluator, candidate, prompt, cache_id, key)
+
+        # default gated: cheap tier-1 single-shot, escalate only hard cases.
+        response = self._judge.judge(prompt=prompt, schema=self._schema)
+        self._tally_tokens(response.input_tokens, response.output_tokens)
+        v1 = evaluator.parse_verdict(response.verdict, candidate)
+        if str(v1.overall).lower() in self.config.escalate_on and self._agent is not None:
+            return self._judge_agentic(evaluator, candidate, prompt, cache_id, key)
+        if response.verdict is not None:
+            self._cache.append(judge_id=cache_id, prompt=prompt, verdict=response.verdict)
+        v1.judge_id = self._judge.id
+        v1.cache_key = key
+        if response.error:
+            v1.error = response.error
+        return v1
+
+    def _judge_linear(self, evaluator, candidate, prompt, cache_id, key):  # noqa: ANN001
+        assert self._judge is not None
         response = self._judge.judge(prompt=prompt, schema=self._schema)
         if response.verdict is not None:
-            self._cache.append(
-                judge_id=self._judge.id, prompt=prompt, verdict=response.verdict,
-            )
+            self._cache.append(judge_id=cache_id, prompt=prompt, verdict=response.verdict)
         v = evaluator.parse_verdict(response.verdict, candidate)
         v.judge_id = self._judge.id
         v.cache_key = key
         if response.error:
             v.error = response.error
-        if response.input_tokens:
-            self.stats.input_tokens += response.input_tokens
-        if response.output_tokens:
-            self.stats.output_tokens += response.output_tokens
+        self._tally_tokens(response.input_tokens, response.output_tokens)
         return v
+
+    def _judge_agentic(self, evaluator, candidate, prompt, cache_id, key):  # noqa: ANN001
+        assert self._agent is not None
+        verdict, trace = self._agent.run(
+            evaluator, candidate, token_sink=self._tally_tokens,
+        )
+        self._write_trace(trace)
+        verdict.cache_key = key
+        verdict.agentic = True
+        verdict_dict = {
+            "name_ok": verdict.name_ok, "type_ok": verdict.type_ok,
+            "role_ok": verdict.role_ok, "overall": verdict.overall,
+            "reasoning": verdict.reasoning,
+        }
+        if not verdict.error:
+            self._cache.append(judge_id=cache_id, prompt=prompt, verdict=verdict_dict)
+        return verdict
+
+    def _tally_tokens(self, in_tok: int | None, out_tok: int | None) -> None:
+        if in_tok:
+            self.stats.input_tokens += in_tok
+        if out_tok:
+            self.stats.output_tokens += out_tok
+
+    def _write_trace(self, trace: Any) -> None:
+        """Append one candidate's agent trace to the run's traces dir."""
+        try:
+            tdir = self._run_dir / "traces"
+            tdir.mkdir(parents=True, exist_ok=True)
+            with (tdir / f"{trace.evaluator_id}.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(trace.to_dict(), ensure_ascii=False) + "\n")
+        except OSError as exc:
+            log.debug("trace.write_failed %s", exc)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -483,6 +599,37 @@ def _build_judge(config: SessionConfig) -> Judge:
         max_output_tokens=int(defaults.get("max_output_tokens", 4096)),
         temperature=float(defaults.get("temperature", 0.0)),
         top_p=float(defaults.get("top_p", 0.95)),
+    )
+
+
+def _build_agent(
+    config: SessionConfig,
+    judge: Judge,
+    marc_index: dict[str, Any],
+    ner_index: dict[str, Any],
+) -> Any:
+    """Construct the AgenticJudge for the loop modes."""
+    from eval_agent.agentic.loop import AgenticJudge  # noqa: PLC0415
+    from eval_agent.agentic.tools import ToolRegistry  # noqa: PLC0415
+
+    authority = None
+    if "lookup_authority" in config.tools:
+        from eval_agent.client.authority_client import AuthorityClient  # noqa: PLC0415
+        authority = AuthorityClient(rpm=config.authority_rpm)
+
+    rubric_path = REPO_ROOT / "config" / "rubrics" / "agentic_system.md"
+    system_prompt = rubric_path.read_text(encoding="utf-8") if rubric_path.exists() else ""
+
+    return AgenticJudge(
+        judge=judge,
+        registry=ToolRegistry(list(config.tools)),
+        marc_index=marc_index,
+        ner_index=ner_index,
+        agent_system_prompt=system_prompt,
+        authority=authority,
+        max_steps=config.max_steps,
+        escalate_model=config.escalate_model,
+        escalate_on=config.escalate_on,
     )
 
 

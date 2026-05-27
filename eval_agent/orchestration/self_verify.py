@@ -91,7 +91,13 @@ class SelfVerifier:
     ) -> SelfVerifyResult:
         run_id = run_dir.name
         schema = _load_schema()
-        sample = self._sample(verdicts)
+        # Gate on the deterministic (linear / tier-1) verdicts only. Agentic
+        # verdicts re-gather evidence on re-run, so re-judging them via the
+        # single-shot judge would spuriously disagree — they must not fail
+        # the run. Their count is recorded in the artifact for visibility.
+        linear_verdicts = [v for v in verdicts if not getattr(v, "agentic", False)]
+        self._agentic_excluded = len(verdicts) - len(linear_verdicts)
+        sample = self._sample(linear_verdicts)
 
         agreements = 0
         disagreement_records: list[dict[str, Any]] = []
@@ -229,6 +235,7 @@ class SelfVerifier:
             "run_id": result.run_id,
             "sample_rate": self._sample_rate,
             "seed": self._seed,
+            "agentic_excluded": getattr(self, "_agentic_excluded", 0),
             "disagreement_records": disagreement_records,
             "written_at": datetime.now(timezone.utc).isoformat(),
         }

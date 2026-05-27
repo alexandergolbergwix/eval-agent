@@ -23,6 +23,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass, field
 from typing import Any
 
 from eval_agent.client.judge_interface import Judge, JudgeResponse
@@ -35,6 +36,31 @@ _ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     "{model}:generateContent"
 )
+
+
+@dataclass
+class ToolCall:
+    """One function-call the model emitted in a tool-use turn."""
+
+    name: str
+    args: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ToolTurnResponse:
+    """One round-trip of a multi-turn tool-use conversation.
+
+    Either ``function_calls`` is non-empty (the model wants evidence) OR
+    ``verdict`` / ``raw_text`` is set (the model answered). The caller owns
+    the conversation history and loops.
+    """
+
+    function_calls: list[ToolCall]
+    verdict: dict | None
+    raw_text: str | None
+    error: str | None
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class GeminiJudge:
@@ -136,6 +162,17 @@ class GeminiJudge:
         self, payload: dict[str, Any], *, timeout: int,
     ) -> tuple[str, int | None, int | None]:
         url = _ENDPOINT.format(model=self.id)
+        data = self._post(payload, url=url, timeout=timeout)
+        return _extract_text_and_usage(data)
+
+    def _post(
+        self, payload: dict[str, Any], *, url: str, timeout: int,
+    ) -> dict[str, Any]:
+        """HTTP POST with rate-limiting + retry/backoff; return parsed JSON.
+
+        Shared by ``judge()`` (via ``_call``) and ``generate_with_tools``.
+        Raises ``RuntimeError`` on exhausted retries / non-429 HTTP errors.
+        """
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         last_err: Exception | None = None
         for attempt in range(self._max_retries):
@@ -154,8 +191,7 @@ class GeminiJudge:
             )
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                return _extract_text_and_usage(data)
+                    return json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as exc:
                 body_text = exc.read().decode("utf-8", errors="ignore")
                 log.debug("http_error code=%d attempt=%d body=%s",
@@ -176,6 +212,55 @@ class GeminiJudge:
                 raise RuntimeError(f"network error: {exc}") from exc
         # Defensive — loop should always exit via return or raise above
         raise RuntimeError(f"max retries exhausted: {last_err}")
+
+    # ── Tool-use (agentic) surface ─────────────────────────────────────
+
+    def generate_with_tools(
+        self,
+        *,
+        contents: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        response_schema: dict[str, Any] | None = None,
+        model: str | None = None,
+        timeout: int = 120,
+    ) -> ToolTurnResponse:
+        """One tool-use round-trip. Stateless — caller owns the history.
+
+        Returns ``function_calls`` when the model wants tools, else a parsed
+        ``verdict`` (when ``response_schema`` is set and the text is JSON) or
+        ``raw_text``. Never raises — transport/parse failures surface in
+        ``error``.
+
+        Note: Gemini's v1beta does not reliably honour ``responseSchema`` and
+        ``tools`` simultaneously, so when tools are present we do NOT send
+        ``responseSchema``; the model answers with a JSON text part that we
+        parse against the caller's intent. The agent system prompt instructs
+        the exact verdict shape.
+        """
+        resolved = model or self.id
+        url = _ENDPOINT.format(model=resolved)
+        gen_cfg: dict[str, Any] = {
+            "temperature": self._temperature,
+            "topP": self._top_p,
+            "maxOutputTokens": self._max_output_tokens,
+        }
+        thinking = _thinking_config_for(resolved, self._thinking_level)
+        if thinking is not None:
+            gen_cfg["thinkingConfig"] = thinking
+        payload: dict[str, Any] = {
+            "contents": contents,
+            "tools": tools,
+            "toolConfig": {"functionCallingConfig": {"mode": "AUTO"}},
+            "generationConfig": gen_cfg,
+        }
+        try:
+            data = self._post(payload, url=url, timeout=timeout)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("tools.transport_error %s", truncate(str(exc), 400))
+            return ToolTurnResponse(
+                function_calls=[], verdict=None, raw_text=None, error=str(exc),
+            )
+        return _parse_tool_turn(data)
 
     def _parse(self, raw_text: str) -> tuple[dict[str, Any] | None, str | None]:
         text = raw_text.strip()
@@ -264,3 +349,61 @@ def _extract_text_and_usage(
     text = parts[0].get("text", "")
     usage = data.get("usageMetadata") or {}
     return text, usage.get("promptTokenCount"), usage.get("candidatesTokenCount")
+
+
+def _parse_tool_turn(data: dict[str, Any]) -> ToolTurnResponse:
+    """Parse a tool-use Gemini response into function calls / verdict / text."""
+    usage = data.get("usageMetadata") or {}
+    in_tok = usage.get("promptTokenCount") or 0
+    out_tok = usage.get("candidatesTokenCount") or 0
+    candidates = data.get("candidates") or []
+    if not candidates:
+        return ToolTurnResponse(
+            function_calls=[], verdict=None, raw_text=None,
+            error=f"no candidates in response: {truncate(json.dumps(data), 300)}",
+            input_tokens=in_tok, output_tokens=out_tok,
+        )
+    parts = candidates[0].get("content", {}).get("parts") or []
+    calls: list[ToolCall] = []
+    text_chunks: list[str] = []
+    for part in parts:
+        fc = part.get("functionCall")
+        if isinstance(fc, dict) and fc.get("name"):
+            args = fc.get("args")
+            calls.append(ToolCall(name=str(fc["name"]), args=dict(args) if isinstance(args, dict) else {}))
+            continue
+        txt = part.get("text")
+        if isinstance(txt, str) and txt.strip():
+            text_chunks.append(txt)
+    if calls:
+        return ToolTurnResponse(
+            function_calls=calls, verdict=None, raw_text=None, error=None,
+            input_tokens=in_tok, output_tokens=out_tok,
+        )
+    raw = "\n".join(text_chunks).strip()
+    verdict, _err = _parse_json_object(raw) if raw else (None, None)
+    if not raw:
+        finish = candidates[0].get("finishReason", "?")
+        return ToolTurnResponse(
+            function_calls=[], verdict=None, raw_text=None,
+            error=f"no functionCall and no text (finishReason={finish})",
+            input_tokens=in_tok, output_tokens=out_tok,
+        )
+    return ToolTurnResponse(
+        function_calls=[], verdict=verdict, raw_text=raw, error=None,
+        input_tokens=in_tok, output_tokens=out_tok,
+    )
+
+
+def _parse_json_object(raw_text: str) -> tuple[dict[str, Any] | None, str | None]:
+    """Parse a JSON object out of model text, tolerating ```json fences."""
+    text = raw_text.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        return None, f"PARSE_ERROR: {exc}: {text[:200]}"
+    if not isinstance(parsed, dict):
+        return None, f"PARSE_ERROR: not a JSON object: {text[:200]}"
+    return parsed, None

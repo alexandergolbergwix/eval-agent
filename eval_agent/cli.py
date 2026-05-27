@@ -416,6 +416,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Override EVAL_AGENT_STATE_DIR / built-in default. Used by "
              "integrators (e.g. MHM Pipeline bundle) to point at a writable per-user dir.",
     )
+    # ── Agentic mode (default = gated agentic) ────────────────────────
+    p_run.add_argument("--linear", action="store_true",
+                       help="disable agency: single-shot judge per candidate "
+                            "(the reproducible / citable path).")
+    p_run.add_argument("--agentic-all", action="store_true",
+                       help="run the tool-loop on EVERY candidate (vs the default "
+                            "gated mode that only escalates abstain/partial cases).")
+    p_run.add_argument("--agentic-max-steps", type=int, default=None,
+                       help="max tool-loop steps per candidate (default 6).")
+    p_run.add_argument("--tier-model", default=None,
+                       help="tier-1 model for the cheap pass (default gemini-3.5-flash).")
+    p_run.add_argument("--escalate-model", default=None,
+                       help="model the loop escalates to when still uncertain "
+                            "(default gemini-3.1-pro-preview).")
 
     p_report = sub.add_parser("report", help="regenerate report from a run")
     p_report.add_argument("--run", default="latest")
