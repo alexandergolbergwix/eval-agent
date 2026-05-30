@@ -264,6 +264,79 @@ to `"user"` per v1beta — verify in the live smoke if tool turns error.
 
 ---
 
+## LLM orchestrator (Phase 1 — read-only, 2026-05-30)
+
+A separate **LLM-driven orchestrator** lives next to the candidate-level
+judge, in `eval_agent/orchestrator/`. Where the existing `eval-agent
+run` lets a Python loop decide which candidate to judge next, the
+orchestrator lets an LLM decide which evaluation operation to perform
+next — but only through allowlisted, validated tools.
+
+```
+Orchestrator LLM
+  -> reads compact state summary
+  -> emits JSON action (ACTION_SCHEMA)
+  -> Python policy validates allowlist + budget + doctrine
+  -> tool executes (read-only)
+  -> observation returns to LLM
+  -> ... repeat until 'final' or budget cap ...
+  -> writes trace.jsonl + decisions.jsonl + final_report.md
+```
+
+Run it:
+
+```bash
+eval-agent orchestrate --goal "Should we re-train person_ner.TRANSCRIBER?" \
+  --plan-only --max-steps 12 --max-seconds 180
+```
+
+Tools available in Phase 1 (read-only, every one routes through
+`eval_agent/orchestrator/state_reader.py` — no direct filesystem
+access from tools):
+
+- `inspect_state` — recent runs + feature counts.
+- `read_latest_report` — markdown report from most recent run.
+- `read_benchmark_metrics` — `summary.csv` rows, worst-first.
+- `compare_runs` — per-sub_type precision_strict deltas.
+- `inspect_failed_candidates` — fail/partial/abstain candidates.
+- `summarize_feature_list` — feature_list.json roll-up.
+- `recommend_next_eval` — heuristic feature-priority hint.
+
+Hard guarantees (enforced in `policy.py`):
+
+- Step cap, wall-clock cap, USD cap — every cap returns a `Refusal`
+  before the tool runs.
+- Allowlist by mode. `plan_only` (default) is the only populated mode;
+  `supervised` (Phase 2) and `autonomous` (Phase 4) are pre-declared
+  with **empty** allowlists so widening is a one-line audit.
+- Doctrinal model filter — refuses any tool arg requesting
+  `gemini-1.x`.
+- Default judge is `gemini-3.5-flash` (Rule 55).
+
+Live integrators tail stdout for `[TRACE] {json}` lines (one event
+per line, mirrors `trace.jsonl` exactly). The MHM Pipeline web app
+streams those lines via SSE to a live agent-flow diagram on
+`/orchestrator`.
+
+Modules:
+- `schemas.py` — strict `ACTION_SCHEMA` + `Action`/`Final` dataclasses.
+- `state_reader.py` — typed read-only views over `state/`.
+- `tools.py` — Phase 1 tool registry + dispatcher (never raises).
+- `policy.py` — allowlist + budgets + Refusal.
+- `trace.py` — threadsafe append-only writer.
+- `loop.py` — the Orchestrator class + StubJudge for tests.
+- `gemini_judge.py` — adapter from `GeminiJudge` to the loop's
+  `LLMFn`.
+
+Phases 2–4 are not yet implemented. The plan in
+`/Users/alexandergo/.claude/plans/silly-prancing-quiche.md` (or the
+matching plan file you see at session start) lays them out. Until
+they ship, `--supervised` / `--autonomous` parse but produce an empty
+allowlist (the LLM is told no tools are reachable and refused into a
+`no_progress` outcome — visible in the trace so it's never silent).
+
+---
+
 ## What this agent does NOT do
 
 - Train models (the pipeline owns model training).
