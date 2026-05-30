@@ -368,6 +368,105 @@ def _cmd_recover(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_orchestrate(args: argparse.Namespace) -> int:
+    """LLM-orchestrator session (Phase 1 — read-only).
+
+    Builds an :class:`Orchestrator` with the appropriate judge (real
+    Gemini or the deterministic stub) and runs one session against the
+    project state. Streams ``[TRACE]`` lines for live UI integrators
+    (the MHM Pipeline web bridge tails them via SSE).
+    """
+    import json as _json   # local alias — keep top-level imports clean
+    import os
+    import sys as _sys
+
+    from eval_agent.orchestrator import (  # noqa: PLC0415
+        Budget, MODE_PLAN_ONLY, Orchestrator, StubJudge,
+    )
+
+    state_dir = _sys.modules[__name__].STATE_DIR
+    if args.state_dir is not None:
+        state_dir = Path(args.state_dir)
+
+    # Pick a judge.
+    if args.no_llm:
+        # Useful for testing the loop + tools without a key. We emit
+        # the smallest possible script: inspect_state → final.
+        script = [
+            {"thought_summary": "no-llm: kick off with state snapshot",
+             "final": False, "action": {"tool": "inspect_state", "args": {}}},
+            {"thought_summary": "no-llm: summarise feature list",
+             "final": False, "action": {"tool": "summarize_feature_list", "args": {}}},
+            {"thought_summary": "no-llm: wrap up with stub recommendation",
+             "final": True,
+             "final_report": {
+                 "summary": "Stub session — Phase 1 plumbing smoke. No LLM "
+                            "was queried; rerun without --no-llm for a real "
+                            "recommendation.",
+                 "recommended_next_steps": [],
+                 "risks": ["This was a stub run; no decisions are model-backed."],
+                 "commands": [],
+                 "evidence_paths": [],
+             }},
+        ]
+        judge_fn = StubJudge(script=script)
+    else:
+        from eval_agent.orchestrator.gemini_judge import (  # noqa: PLC0415
+            DEFAULT_JUDGE_MODEL, build_gemini_llm,
+        )
+        api_key = args.api_key or os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            print("Gemini API key required. Set GEMINI_API_KEY or pass "
+                  "--api-key, or use --no-llm for a deterministic dry run.",
+                  file=_sys.stderr)
+            return 2
+        judge_fn = build_gemini_llm(
+            api_key=api_key,
+            model=args.judge or DEFAULT_JUDGE_MODEL,
+            rpm=args.rpm or 60,
+        )
+
+    budget = Budget(
+        max_steps=args.max_steps,
+        max_seconds=args.max_seconds,
+        max_usd=args.max_usd,
+    )
+
+    # Phase 1 only allows the plan-only allowlist. Future phases extend
+    # ALLOW_BY_MODE; the CLI flag here exists so the schema is stable
+    # but Phase-2+ modes refuse politely (empty allowlist).
+    mode = MODE_PLAN_ONLY
+    if args.supervised:
+        from eval_agent.orchestrator import MODE_SUPERVISED  # noqa: PLC0415
+        mode = MODE_SUPERVISED
+    elif args.autonomous:
+        from eval_agent.orchestrator import MODE_AUTONOMOUS  # noqa: PLC0415
+        mode = MODE_AUTONOMOUS
+
+    def _emit(ev: dict) -> None:
+        # Single-line JSON prefixed with "[TRACE]" so subprocess
+        # integrators can filter their stdout. Mirrors the existing
+        # "[STEP]"/"[STATS]" convention used by the candidate-level loop.
+        try:
+            print("[TRACE] " + _json.dumps(ev, ensure_ascii=False), flush=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+    print(f"[STEP] orchestrator starting mode={mode!r} goal={args.goal!r}",
+          flush=True)
+    orch = Orchestrator(
+        judge=judge_fn, state_dir=state_dir, goal=args.goal,
+        mode=mode, budget=budget, on_step=_emit,
+    )
+    result = orch.run()
+    print(f"[STEP] orchestrator done outcome={result.outcome!r} "
+          f"steps={result.steps_used} wall={result.wall_seconds:.2f}s",
+          flush=True)
+    print(f"session_dir: {result.session_dir}")
+    print(f"final_report: {result.session_dir / 'final_report.md'}")
+    return 0 if result.outcome == "final" else 3
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="eval-agent",
@@ -455,6 +554,50 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                              help="output YAML path (default: "
                                   "state/runs/<run_id>/per_sub_type_thresholds.yaml)")
 
+    # ── Orchestrator (Phase 1: --plan-only by default) ────────────────
+    p_orch = sub.add_parser(
+        "orchestrate",
+        help="LLM-driven orchestrator over the eval-agent state "
+             "(Phase 1: read-only)",
+    )
+    p_orch.add_argument("--goal", required=True,
+                        help="natural-language goal for this session, e.g. "
+                             "'Should we re-train person_ner.TRANSCRIBER?'")
+    # Mode flags — Phase 1 ships --plan-only (default). The others
+    # parse but currently produce an empty allowlist (the model will be
+    # told no tools are reachable and refused into a no-progress
+    # outcome). Reserved so the CLI is stable from here.
+    mode = p_orch.add_mutually_exclusive_group()
+    mode.add_argument("--plan-only", dest="plan_only", action="store_true",
+                      default=True,
+                      help="read-only inspection tools (default).")
+    mode.add_argument("--supervised", action="store_true",
+                      help="Phase 2: supervised execution (not yet enabled).")
+    mode.add_argument("--autonomous", action="store_true",
+                      help="Phase 4: autonomous experiments (not yet enabled).")
+    p_orch.add_argument("--judge", default=None,
+                        help="override judge model id "
+                             "(default: gemini-3.5-flash; Rule 55).")
+    p_orch.add_argument("--api-key", default=None,
+                        help="Gemini API key (default: GEMINI_API_KEY env).")
+    p_orch.add_argument("--rpm", type=int, default=60,
+                        help="rate limit for the orchestrator's judge.")
+    p_orch.add_argument("--max-steps", type=int, default=12,
+                        help="max LLM action steps before forcing a final.")
+    p_orch.add_argument("--max-seconds", type=int, default=180,
+                        help="wall-clock cap (default 180s).")
+    p_orch.add_argument("--max-usd", type=float, default=0.10,
+                        help="USD spend cap (default $0.10).")
+    p_orch.add_argument("--no-llm", action="store_true",
+                        help="run with a deterministic stub Judge — exercises "
+                             "the loop + tools + trace without contacting "
+                             "Gemini. Used by tests and the web bridge "
+                             "integration smoke.")
+    p_orch.add_argument(
+        "--state-dir", type=Path, default=None,
+        help="Override state dir (same semantics as `run --state-dir`).",
+    )
+
     return p.parse_args(argv)
 
 
@@ -467,7 +610,8 @@ def main(argv: list[str] | None = None) -> int:
         "report": _cmd_report,
         "diff": _cmd_diff,
         "recover": _cmd_recover,
-        "calibrate": _cmd_calibrate,
+        "calibrate":   _cmd_calibrate,
+        "orchestrate": _cmd_orchestrate,
     }
     return dispatch[args.cmd](args)
 

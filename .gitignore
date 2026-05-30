@@ -33,3 +33,6 @@ state/logs/
 # Local env
 .env
 .env.local
+
+# Orchestrator session artefacts — same rationale as state/runs/.
+state/orchestrator/sessions/*/
