@@ -160,10 +160,24 @@ eval-agent
 ├── report      # regenerate report.md from results.jsonl
 ├── diff        # compare two runs for regression detection
 ├── recover     # safe-mode: rebuild state from cache + git
+├── orchestrate # LLM planner over eval-agent state and benchmark evidence
 └── doctor      # health check
 ```
 
 `make <subcommand>` proxies to the CLI for common workflows.
+
+The orchestrator is for "what should we do next?" decisions. It asks Gemini
+for one strict-JSON action at a time, validates the action in Python, runs only
+allowlisted tools, and writes `state/orchestrator/sessions/<ts>/trace.jsonl`,
+`decisions.jsonl`, and `final_report.md`.
+
+```bash
+.venv/bin/python -m eval_agent.cli orchestrate \
+  --goal "Inspect person NER metrics and recommend the next evaluation step" \
+  --plan-only \
+  --pipeline-root /Users/alexandergo/Documents/Doctorat/pipeline \
+  --pipeline-output /Users/alexandergo/Documents/Doctorat/pipeline/eval/work
+```
 
 ---
 

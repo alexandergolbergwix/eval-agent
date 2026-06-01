@@ -74,6 +74,9 @@ class Orchestrator:
     mode:            str = pol.MODE_PLAN_ONLY
     budget:          pol.Budget = field(default_factory=pol.Budget)
     allowlist:       list[str] | None = None
+    pipeline_root:   Path | None = None
+    pipeline_output: Path | None = None
+    api_key:         str = ""
     on_step:         StepEmitter | None = None
     max_parse_retries: int = 2
 
@@ -98,7 +101,14 @@ class Orchestrator:
         )
         self._emit(start_event)
 
-        ctx = tools.ToolContext(state_dir=self.state_dir, goal=self.goal)
+        ctx = tools.ToolContext(
+            state_dir=self.state_dir,
+            goal=self.goal,
+            pipeline_root=self.pipeline_root,
+            pipeline_output=self.pipeline_output,
+            mode=self.mode,
+            api_key=self.api_key,
+        )
         state_summary = state_reader.compact_state_summary(self.state_dir)
         observation_window: list[dict[str, Any]] = []
         decisions: list[dict[str, Any]] = []
@@ -309,13 +319,18 @@ def run_session(
     mode: str = pol.MODE_PLAN_ONLY,
     budget: pol.Budget | None = None,
     allowlist: list[str] | None = None,
+    pipeline_root: Path | None = None,
+    pipeline_output: Path | None = None,
+    api_key: str = "",
     on_step: StepEmitter | None = None,
 ) -> LoopResult:
     """Run one orchestrator session and return its result + session dir."""
     sd = state_dir or state_reader.default_state_dir()
     orch = Orchestrator(
         judge=judge, state_dir=sd, goal=goal, mode=mode,
-        budget=budget or pol.Budget(), allowlist=allowlist, on_step=on_step,
+        budget=budget or pol.Budget(), allowlist=allowlist,
+        pipeline_root=pipeline_root, pipeline_output=pipeline_output,
+        api_key=api_key, on_step=on_step,
     )
     return orch.run()
 

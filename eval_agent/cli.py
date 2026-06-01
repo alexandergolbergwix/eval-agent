@@ -456,7 +456,12 @@ def _cmd_orchestrate(args: argparse.Namespace) -> int:
           flush=True)
     orch = Orchestrator(
         judge=judge_fn, state_dir=state_dir, goal=args.goal,
-        mode=mode, budget=budget, on_step=_emit,
+        mode=mode,
+        budget=budget,
+        pipeline_root=args.pipeline_root,
+        pipeline_output=args.pipeline_output,
+        api_key=args.api_key or os.environ.get("GEMINI_API_KEY", ""),
+        on_step=_emit,
     )
     result = orch.run()
     print(f"[STEP] orchestrator done outcome={result.outcome!r} "
@@ -572,9 +577,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                       default=True,
                       help="read-only inspection tools (default).")
     mode.add_argument("--supervised", action="store_true",
-                      help="Phase 2: supervised execution (not yet enabled).")
+                      help="explicit opt-in for controlled execution/proposal tools.")
     mode.add_argument("--autonomous", action="store_true",
-                      help="Phase 4: autonomous experiments (not yet enabled).")
+                      help="explicit opt-in for the full orchestrator tool allowlist.")
     p_orch.add_argument("--judge", default=None,
                         help="override judge model id "
                              "(default: gemini-3.5-flash; Rule 55).")
@@ -596,6 +601,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p_orch.add_argument(
         "--state-dir", type=Path, default=None,
         help="Override state dir (same semantics as `run --state-dir`).",
+    )
+    p_orch.add_argument(
+        "--pipeline-root",
+        type=Path,
+        default=None,
+        help="Optional MHM Pipeline repo root, used for benchmark-result tools.",
+    )
+    p_orch.add_argument(
+        "--pipeline-output",
+        type=Path,
+        default=None,
+        help="Optional pipeline output directory. Required if an execution-mode "
+             "session chooses run_eval_agent.",
     )
 
     return p.parse_args(argv)

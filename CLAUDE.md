@@ -264,7 +264,7 @@ to `"user"` per v1beta — verify in the live smoke if tool turns error.
 
 ---
 
-## LLM orchestrator (Phase 1 — read-only, 2026-05-30)
+## LLM orchestrator (2026-05-30)
 
 A separate **LLM-driven orchestrator** lives next to the candidate-level
 judge, in `eval_agent/orchestrator/`. Where the existing `eval-agent
@@ -277,7 +277,7 @@ Orchestrator LLM
   -> reads compact state summary
   -> emits JSON action (ACTION_SCHEMA)
   -> Python policy validates allowlist + budget + doctrine
-  -> tool executes (read-only)
+  -> tool executes
   -> observation returns to LLM
   -> ... repeat until 'final' or budget cap ...
   -> writes trace.jsonl + decisions.jsonl + final_report.md
@@ -287,12 +287,12 @@ Run it:
 
 ```bash
 eval-agent orchestrate --goal "Should we re-train person_ner.TRANSCRIBER?" \
-  --plan-only --max-steps 12 --max-seconds 180
+  --plan-only --pipeline-root /Users/alexandergo/Documents/Doctorat/pipeline \
+  --pipeline-output /Users/alexandergo/Documents/Doctorat/pipeline/eval/work
 ```
 
-Tools available in Phase 1 (read-only, every one routes through
-`eval_agent/orchestrator/state_reader.py` — no direct filesystem
-access from tools):
+Default `plan_only` tools are read-only and route through the
+orchestrator tool layer:
 
 - `inspect_state` — recent runs + feature counts.
 - `read_latest_report` — markdown report from most recent run.
@@ -302,21 +302,29 @@ access from tools):
 - `summarize_feature_list` — feature_list.json roll-up.
 - `recommend_next_eval` — heuristic feature-priority hint.
 
+Explicit execution/proposal tools become reachable only when the CLI
+caller opts into `--supervised` or `--autonomous`:
+
+- `run_eval_agent` — run `eval-agent run` on the configured pipeline output.
+- `regenerate_report` — rebuild `report.md` for a run.
+- `write_plan_note` / `create_experiment_manifest` — write proposal artifacts
+  under `state/orchestrator/proposals/`.
+
 Hard guarantees (enforced in `policy.py`):
 
 - Step cap, wall-clock cap, USD cap — every cap returns a `Refusal`
   before the tool runs.
-- Allowlist by mode. `plan_only` (default) is the only populated mode;
-  `supervised` (Phase 2) and `autonomous` (Phase 4) are pre-declared
-  with **empty** allowlists so widening is a one-line audit.
+- Allowlist by mode. `plan_only` is read-only and is the only mode used by
+  the MHM Pipeline GUI. `supervised` and `autonomous` are explicit CLI opt-ins
+  for controlled execution/proposal tools.
 - Doctrinal model filter — refuses any tool arg requesting
-  `gemini-1.x`.
+  a non-Gemini-3 model.
 - Default judge is `gemini-3.5-flash` (Rule 55).
 
 Live integrators tail stdout for `[TRACE] {json}` lines (one event
-per line, mirrors `trace.jsonl` exactly). The MHM Pipeline web app
-streams those lines via SSE to a live agent-flow diagram on
-`/orchestrator`.
+per line, mirrors `trace.jsonl` exactly). The MHM Pipeline desktop app
+uses a Stage 2 "Plan with AI orchestrator" button that launches this
+subprocess in `--plan-only` mode and points the user at `final_report.md`.
 
 Modules:
 - `schemas.py` — strict `ACTION_SCHEMA` + `Action`/`Final` dataclasses.

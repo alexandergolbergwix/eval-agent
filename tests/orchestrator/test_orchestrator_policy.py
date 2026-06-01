@@ -22,14 +22,11 @@ def test_plan_only_allowlist_is_seven_read_only_tools() -> None:
     assert "propose_prompt_patch" not in p.allowlist
 
 
-def test_supervised_and_autonomous_are_empty_in_phase_one() -> None:
-    """Phase 2/4 modes are pre-declared but ship empty allowlists.
-
-    Lifting Phase 2 will add to ALLOW_BY_MODE; until then, calling
-    `--supervised` must produce a policy that refuses every tool.
-    """
-    assert ALLOW_BY_MODE[MODE_SUPERVISED] == frozenset()
-    assert ALLOW_BY_MODE[MODE_AUTONOMOUS] == frozenset()
+def test_supervised_and_autonomous_enable_explicit_execution_modes() -> None:
+    """Non-default modes are explicit opt-ins for controlled execution."""
+    assert "run_eval_agent" in ALLOW_BY_MODE[MODE_SUPERVISED]
+    assert "write_plan_note" in ALLOW_BY_MODE[MODE_SUPERVISED]
+    assert ALLOW_BY_MODE[MODE_AUTONOMOUS] >= ALLOW_BY_MODE[MODE_SUPERVISED]
 
 
 def test_explicit_allowlist_can_narrow_but_not_widen() -> None:

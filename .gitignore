@@ -36,3 +36,63 @@ state/logs/
 
 # Orchestrator session artefacts — same rationale as state/runs/.
 state/orchestrator/sessions/*/
+
+# AI-verify + extraction-verify session artefacts. Per-run streams
+# the desktop/web GUI writes when a curator clicks Verify-with-AI;
+# contains judge prompts + MARC fragments + verdict snapshots that
+# are regenerable AND potentially sensitive. Never source-control.
+state/ai-verify-sessions/
+state/extraction-verify-sessions/
+
+# Secrets / credentials — defence in depth even though .env/.env.local
+# above already catches the usual cases.
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+*.kdbx
+credentials.json
+service-account*.json
+.netrc
+.aws/
+.azure/
+.gcp/
+.kube/
+.modal/
+.heroku/
+
+# Database / dump artefacts.
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.sql.gz
+*.tar.gz
+*.tgz
+*.zip
+*.bak
+*.backup
+
+# Model weights & big ML artefacts.
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+*.pkl
+models/
+weights/
+.cache/
+
+# macOS extras
+._*
+Thumbs.db
+*.swp
+*.swo
+*~

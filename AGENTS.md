@@ -55,6 +55,7 @@ make run PIPELINE_OUTPUT=<path>              # evaluate a pipeline output
 make report                                  # regenerate the latest report
 eval-agent diff --from <ts1> --to <ts2>      # compare two runs
 eval-agent recover                           # rebuild state from cache + git
+eval-agent orchestrate --goal "..." --plan-only  # LLM plan over eval state
 ```
 
 ---
